@@ -1,0 +1,5 @@
+# Email testing dependencies
+python-dotenv==1.0.0
+colorama==0.4.6
+imapclient==3.0.1
+secure-smtplib==0.1.1

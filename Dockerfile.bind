@@ -1,0 +1,10 @@
+FROM base:latest
+
+RUN apk add --no-cache \
+    bind \
+    bind-tools
+
+# Add named user to certgroup for certificate access
+RUN addgroup named certgroup
+
+CMD ["/bin/bash"]

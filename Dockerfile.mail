@@ -1,0 +1,25 @@
+FROM base:latest
+
+RUN apk add --no-cache \
+    postfix \
+    dovecot \
+    dovecot-lmtpd \
+    dovecot-pop3d \
+    openssl
+
+# Add mail service users to certgroup for certificate access
+RUN addgroup postfix certgroup && \
+    addgroup dovecot certgroup && \
+    addgroup dovenull certgroup
+
+# Copy entrypoint script
+COPY mail-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/mail-entrypoint.sh
+
+# Create necessary directories
+RUN mkdir -p /var/mail /var/spool/postfix /etc/postfix /etc/dovecot/conf.d /var/log
+
+# Expose mail ports
+EXPOSE 25 587 143 993
+
+ENTRYPOINT ["/usr/local/bin/mail-entrypoint.sh"]

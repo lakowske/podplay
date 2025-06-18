@@ -1,0 +1,21 @@
+FROM base:latest
+
+RUN apk add --no-cache \
+    apache2 \
+    apache2-utils \
+    apache2-ssl
+
+# Add apache user to certgroup for certificate access
+RUN addgroup apache certgroup
+
+# Copy entrypoint script
+COPY apache-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/apache-entrypoint.sh
+
+# Create document root
+RUN mkdir -p /var/www/localhost/htdocs && \
+    chown -R apache:apache /var/www/localhost
+
+EXPOSE 80 443
+
+ENTRYPOINT ["/usr/local/bin/apache-entrypoint.sh"]
