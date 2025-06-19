@@ -49,3 +49,20 @@ podman run --rm \
 ```
 
 The certificates will be stored in the `certs` volume and can be shared with other containers.
+
+## Run Apache Web Server
+
+Start the Apache container with SSL certificates:
+
+```bash
+podman run -d \
+  --name apache-server \
+  -v certs:/data/certificates \
+  -p 8080:80 \
+  -p 8443:443 \
+  podplay-apache:latest
+```
+
+Access the web server at:
+- HTTP: `http://localhost:8080`
+- HTTPS: `https://localhost:8443`
