@@ -4,6 +4,11 @@
 - **Domain**: lab.sethlakowske.com
 - **Let's Encrypt Email**: lakowske@gmail.com
 
+## Network Configuration
+- **Router Port Forwarding**: External ports 80 and 443 are forwarded to local ports 8080 and 8443
+- **Container Host Bindings**: Use `-p 8080:80 -p 8443:443` for web services
+- This allows Let's Encrypt validation to work through the router while keeping services on non-privileged ports locally
+
 ## Best Practices
 
 ### Container Volumes
