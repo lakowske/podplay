@@ -1,0 +1,32 @@
+FROM base-debian:latest
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    certbot \
+    python3-certbot \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create directories and set ownership
+RUN mkdir -p /data/certificates /var/www/html && \
+    chown -R certuser:certgroup /data/certificates && \
+    chmod 755 /data/certificates
+
+# Copy entrypoint script
+COPY certbot-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/certbot-entrypoint.sh
+
+# Environment variables
+ENV CERT_TYPE=self-signed \
+    DOMAIN=localhost \
+    EMAIL="" \
+    STAGING=true
+
+VOLUME ["/data/certificates"]
+
+# Expose port 80 for Let's Encrypt standalone validation
+EXPOSE 80
+
+# Run as certuser to ensure proper certificate ownership
+USER certuser
+
+ENTRYPOINT ["/usr/local/bin/certbot-entrypoint.sh"]
+CMD ["/bin/bash"]

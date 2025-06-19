@@ -1,0 +1,24 @@
+FROM base-debian:latest
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    apache2 \
+    ssl-cert \
+    && rm -rf /var/lib/apt/lists/*
+
+# Enable necessary Apache modules
+RUN a2enmod ssl headers
+
+# Add www-data user to certgroup for certificate access
+RUN usermod -a -G certgroup www-data
+
+# Copy entrypoint script
+COPY apache-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/apache-entrypoint.sh
+
+# Create document root
+RUN mkdir -p /var/www/html && \
+    chown -R www-data:www-data /var/www/html
+
+EXPOSE 80 443
+
+ENTRYPOINT ["/usr/local/bin/apache-entrypoint.sh"]

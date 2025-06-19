@@ -1,0 +1,45 @@
+FROM base-debian:latest
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postfix \
+    dovecot-core \
+    dovecot-imapd \
+    dovecot-pop3d \
+    dovecot-lmtpd \
+    ssl-cert \
+    gettext-base \
+    bsd-mailx \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add mail service users to certgroup and create directories
+RUN usermod -a -G certgroup postfix && \
+    usermod -a -G certgroup dovecot && \
+    usermod -a -G certgroup dovenull && \
+    groupadd -r vmail && \
+    useradd -r -g vmail -d /var/mail/vhosts -s /usr/sbin/nologin vmail && \
+    usermod -a -G certgroup vmail && \
+    mkdir -p /var/mail/vhosts
+
+# Generate DH parameters for Dovecot
+RUN openssl dhparam -out /etc/dovecot/dh.pem 2048
+
+# Copy configuration files
+COPY mail-config/postfix-main.cf /etc/postfix/main.cf.template
+COPY mail-config/dovecot.conf /etc/dovecot/dovecot.conf
+
+# Create directories following Debian mail conventions
+RUN mkdir -p /var/spool/mail/vhosts /var/spool/postfix/private /etc/postfix /var/log /etc/ssl/certs/dovecot /etc/ssl/dovecot
+
+# Copy entrypoint script
+COPY mail-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/mail-entrypoint.sh
+
+# Set environment variables with defaults
+ENV MAIL_SERVER_NAME=lab.sethlakowske.com \
+    MAIL_DOMAIN=lab.sethlakowske.com
+
+# Expose mail ports
+EXPOSE 25 587 143 993
+
+ENTRYPOINT ["/usr/local/bin/mail-entrypoint.sh"]

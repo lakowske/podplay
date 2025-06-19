@@ -1,0 +1,12 @@
+FROM base-debian:latest
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bind9 \
+    bind9-utils \
+    bind9-dnsutils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add bind user to certgroup for certificate access
+RUN usermod -a -G certgroup bind
+
+CMD ["/bin/bash"]
