@@ -4,9 +4,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     bind9 \
     bind9-utils \
     bind9-dnsutils \
+    gettext-base \
     && rm -rf /var/lib/apt/lists/*
 
 # Add bind user to certgroup for certificate access
 RUN usermod -a -G certgroup bind
 
-CMD ["/bin/bash"]
+# Copy BIND configuration templates
+COPY bind-config/named.conf.options.template /etc/bind/
+COPY bind-config/named.conf.local.template /etc/bind/
+COPY bind-config/db.domain.template /etc/bind/
+
+# Copy entrypoint script
+COPY bind-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/bind-entrypoint.sh
+
+# Create necessary directories
+RUN mkdir -p /var/cache/bind /var/log/bind /etc/bind/zones
+
+# Set environment variables with defaults
+ENV DOMAIN_NAME=lab.sethlakowske.com \
+    DOMAIN_IP=127.0.0.1 \
+    DNS_FORWARDERS="8.8.8.8; 8.8.4.4; 1.1.1.1; 1.0.0.1"
+
+# Expose DNS ports
+EXPOSE 53/udp 53/tcp
+
+ENTRYPOINT ["/usr/local/bin/bind-entrypoint.sh"]

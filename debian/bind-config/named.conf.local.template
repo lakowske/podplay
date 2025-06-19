@@ -1,0 +1,16 @@
+//
+// Local zone definitions for ${DOMAIN_NAME}
+//
+
+zone "${DOMAIN_NAME}" {
+    type master;
+    file "/etc/bind/zones/db.${DOMAIN_NAME}";
+    allow-update { none; };
+};
+
+// Reverse DNS zone for local network (optional)
+zone "10.in-addr.arpa" {
+    type master;
+    file "/etc/bind/zones/db.10";
+    allow-update { none; };
+};

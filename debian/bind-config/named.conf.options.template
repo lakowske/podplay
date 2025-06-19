@@ -1,0 +1,50 @@
+options {
+    directory "/var/cache/bind";
+    
+    // Forward DNS queries to upstream servers
+    forwarders {
+        ${DNS_FORWARDERS_FORMATTED}
+    };
+    
+    // Enable DNSSEC validation
+    dnssec-validation auto;
+    
+    // Listen on all interfaces
+    listen-on { any; };
+    listen-on-v6 { any; };
+    
+    // Allow queries from any source (adjust for production)
+    allow-query { any; };
+    
+    // Enable recursion for clients
+    recursion yes;
+    
+    // Deprecated in modern BIND - removed
+    // query-source address * port 53;
+    
+    // Disable zone transfers for security
+    allow-transfer { none; };
+    
+    // Log queries for debugging
+    querylog yes;
+};
+
+// Logging configuration
+logging {
+    channel default_log {
+        file "/var/log/bind/default.log" versions 3 size 5m;
+        severity info;
+        print-time yes;
+        print-severity yes;
+        print-category yes;
+    };
+    
+    channel query_log {
+        file "/var/log/bind/query.log" versions 3 size 5m;
+        severity info;
+        print-time yes;
+    };
+    
+    category default { default_log; };
+    category queries { query_log; };
+};
