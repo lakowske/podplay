@@ -23,14 +23,21 @@ if [ -f "$SSL_CERT_FILE" ] && [ -f "$SSL_KEY_FILE" ]; then
     SSL_ENABLED="true"
     echo "SSL certificates found, enabling TLS"
     
-    # Copy certificates to Debian Dovecot location
+    # Copy certificates to both Dovecot and Postfix locations
     cp "$SSL_CERT_FILE" /etc/ssl/dovecot/server.pem
     cp "$SSL_KEY_FILE" /etc/ssl/dovecot/server.key
+    cp "$SSL_CERT_FILE" /etc/ssl/certs/dovecot/fullchain.pem
+    cp "$SSL_KEY_FILE" /etc/ssl/certs/dovecot/privkey.pem
     
     # Set proper permissions using usernames
     chown root:dovecot /etc/ssl/dovecot/server.key
     chmod 640 /etc/ssl/dovecot/server.key
     chmod 644 /etc/ssl/dovecot/server.pem
+    
+    # Set permissions for Postfix certificates
+    chown root:postfix /etc/ssl/certs/dovecot/privkey.pem
+    chmod 640 /etc/ssl/certs/dovecot/privkey.pem
+    chmod 644 /etc/ssl/certs/dovecot/fullchain.pem
     
     # Update SSL file paths for templates
     export SSL_CERT_FILE="/etc/ssl/certs/dovecot/fullchain.pem"

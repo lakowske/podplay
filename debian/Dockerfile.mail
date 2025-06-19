@@ -26,6 +26,7 @@ RUN openssl dhparam -out /etc/dovecot/dh.pem 2048
 
 # Copy configuration files
 COPY mail-config/postfix-main.cf /etc/postfix/main.cf.template
+COPY mail-config/master.cf /etc/postfix/master.cf
 COPY mail-config/dovecot.conf /etc/dovecot/dovecot.conf
 
 # Create directories following Debian mail conventions
@@ -40,6 +41,6 @@ ENV MAIL_SERVER_NAME=lab.sethlakowske.com \
     MAIL_DOMAIN=lab.sethlakowske.com
 
 # Expose mail ports
-EXPOSE 25 587 143 993
+EXPOSE 25 587 465 143 993
 
 ENTRYPOINT ["/usr/local/bin/mail-entrypoint.sh"]

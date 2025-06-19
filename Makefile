@@ -1,8 +1,9 @@
-.PHONY: build build-all build-base build-apache build-bind build-mail build-certbot clean help
-.PHONY: alpine alpine-all alpine-base alpine-apache alpine-bind alpine-mail alpine-certbot alpine-clean
-.PHONY: debian debian-all debian-base debian-apache debian-bind debian-mail debian-certbot debian-clean
+.PHONY: help clean
+.PHONY: alpine alpine-all alpine-base alpine-apache alpine-bind alpine-mail alpine-certbot alpine-clean alpine-help
+.PHONY: debian debian-all debian-base debian-apache debian-bind debian-mail debian-certbot debian-clean debian-help
+.PHONY: build build-all build-base build-apache build-bind build-mail build-certbot
 
-# Default to Alpine for backward compatibility
+# Backward compatibility targets (delegate to Alpine)
 build-all: alpine-all
 build: alpine-base
 build-base: alpine-base
@@ -11,85 +12,90 @@ build-bind: alpine-bind
 build-mail: alpine-mail
 build-certbot: alpine-certbot
 
-# Alpine builds
-alpine-all: alpine-apache alpine-bind alpine-mail alpine-certbot
-
+# Alpine targets (delegate to alpine/Makefile)
 alpine: alpine-base
 
+alpine-all:
+	$(MAKE) -C alpine all
+
 alpine-base:
-	podman build -t base:latest -f alpine/Dockerfile alpine/
+	$(MAKE) -C alpine base
 
-alpine-apache: alpine-base
-	podman build -t podplay-apache:latest -f alpine/Dockerfile.apache alpine/
+alpine-apache:
+	$(MAKE) -C alpine apache
 
-alpine-bind: alpine-base
-	podman build -t podplay-bind:latest -f alpine/Dockerfile.bind alpine/
+alpine-bind:
+	$(MAKE) -C alpine bind
 
-alpine-mail: alpine-base
-	podman build -t podplay-mail:latest -f alpine/Dockerfile.mail alpine/
+alpine-mail:
+	$(MAKE) -C alpine mail
 
-alpine-certbot: alpine-base
-	podman build -t podplay-certbot:latest -f alpine/Dockerfile.certbot alpine/
+alpine-certbot:
+	$(MAKE) -C alpine certbot
 
 alpine-clean:
-	podman rmi podplay-apache:latest || true
-	podman rmi podplay-bind:latest || true
-	podman rmi podplay-mail:latest || true
-	podman rmi podplay-certbot:latest || true
-	podman rmi base:latest || true
+	$(MAKE) -C alpine clean
 
-# Debian builds
-debian-all: debian-apache debian-bind debian-mail debian-certbot
+alpine-help:
+	$(MAKE) -C alpine help
 
+# Debian targets (delegate to debian/Makefile)
 debian: debian-base
 
+debian-all:
+	$(MAKE) -C debian all
+
 debian-base:
-	podman build -t base-debian:latest -f debian/Dockerfile debian/
+	$(MAKE) -C debian base
 
-debian-apache: debian-base
-	podman build -t podplay-apache-debian:latest -f debian/Dockerfile.apache debian/
+debian-apache:
+	$(MAKE) -C debian apache
 
-debian-bind: debian-base
-	podman build -t podplay-bind-debian:latest -f debian/Dockerfile.bind debian/
+debian-bind:
+	$(MAKE) -C debian bind
 
-debian-mail: debian-base
-	podman build -t podplay-mail-debian:latest -f debian/Dockerfile.mail debian/
+debian-mail:
+	$(MAKE) -C debian mail
 
-debian-certbot: debian-base
-	podman build -t podplay-certbot-debian:latest -f debian/Dockerfile.certbot debian/
+debian-certbot:
+	$(MAKE) -C debian certbot
 
 debian-clean:
-	podman rmi podplay-apache-debian:latest || true
-	podman rmi podplay-bind-debian:latest || true
-	podman rmi podplay-mail-debian:latest || true
-	podman rmi podplay-certbot-debian:latest || true
-	podman rmi base-debian:latest || true
+	$(MAKE) -C debian clean
 
-# Clean all images
+debian-help:
+	$(MAKE) -C debian help
+
+# Global targets
 clean: alpine-clean debian-clean
+	@echo "All images cleaned"
 
 help:
-	@echo "Available targets:"
+	@echo "PodPlay Container Build System"
+	@echo "============================="
 	@echo ""
-	@echo "Alpine builds (default):"
-	@echo "  build-all    - Build all Alpine service images (backward compatibility)"
-	@echo "  alpine-all   - Build all Alpine service images"
-	@echo "  alpine-base  - Build base Alpine image"
-	@echo "  alpine-apache - Build Alpine Apache container"
-	@echo "  alpine-bind  - Build Alpine BIND DNS container"
-	@echo "  alpine-mail  - Build Alpine mail server container"
-	@echo "  alpine-certbot - Build Alpine Certbot container"
-	@echo "  alpine-clean - Remove all Alpine images"
+	@echo "This project supports two implementations:"
+	@echo "  - Alpine Linux (lightweight, minimal)"
+	@echo "  - Debian (full-featured, stable)"
 	@echo ""
-	@echo "Debian builds:"
-	@echo "  debian-all   - Build all Debian service images"
-	@echo "  debian-base  - Build base Debian image"
-	@echo "  debian-apache - Build Debian Apache container"
-	@echo "  debian-bind  - Build Debian BIND DNS container"
-	@echo "  debian-mail  - Build Debian mail server container"
-	@echo "  debian-certbot - Build Debian Certbot container"
-	@echo "  debian-clean - Remove all Debian images"
+	@echo "Quick Start:"
+	@echo "  make alpine-all    - Build all Alpine containers"
+	@echo "  make debian-all    - Build all Debian containers"
 	@echo ""
-	@echo "General:"
-	@echo "  clean        - Remove all built images (Alpine and Debian)"
-	@echo "  help         - Show this help message"
+	@echo "Implementation-specific targets:"
+	@echo "  alpine-*           - Alpine Linux implementation"
+	@echo "  debian-*           - Debian implementation"
+	@echo ""
+	@echo "Available services: base, apache, bind, mail, certbot"
+	@echo ""
+	@echo "For detailed help on each implementation:"
+	@echo "  make alpine-help   - Show Alpine-specific targets"
+	@echo "  make debian-help   - Show Debian-specific targets"
+	@echo ""
+	@echo "Backward compatibility (defaults to Alpine):"
+	@echo "  make build-all     - Same as alpine-all"
+	@echo "  make build-*       - Same as alpine-*"
+	@echo ""
+	@echo "Global targets:"
+	@echo "  clean              - Remove all images (Alpine and Debian)"
+	@echo "  help               - Show this help message"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Test script for mail server SSL/TLS functionality
-Tests both SMTP and IMAP with SSL/TLS connections
+Test script for mail server SSL/TLS functionality with Let's Encrypt certificates
+Tests both SMTP and IMAP with SSL/TLS connections using production certificates
 """
 
 import smtplib
@@ -19,10 +19,11 @@ init()
 
 # Configuration
 MAIL_SERVER = "localhost"
-SMTP_PORT = 9587  # TLS required port
-SMTP_STARTTLS_PORT = 9025  # STARTTLS port
-IMAP_PORT = 9993  # IMAPS port
-IMAP_STARTTLS_PORT = 9143  # IMAP with STARTTLS
+SMTP_PORT = 2587  # Submission port (STARTTLS)
+SMTPS_PORT = 2465  # SMTPS port (implicit TLS)
+SMTP_STARTTLS_PORT = 2525  # STARTTLS port
+IMAP_PORT = 2993  # IMAPS port
+IMAP_STARTTLS_PORT = 2143  # IMAP with STARTTLS
 USERNAME = "admin@lab.sethlakowske.com"
 PASSWORD = "password"
 
@@ -35,15 +36,16 @@ def print_error(msg):
 def print_info(msg):
     print(f"{Fore.BLUE}ℹ {msg}{Style.RESET_ALL}")
 
-def test_smtp_tls():
-    """Test SMTP with TLS (port 587)"""
-    print(f"\n{Fore.YELLOW}Testing SMTP with TLS on port {SMTP_PORT}...{Style.RESET_ALL}")
+def test_smtp_submission():
+    """Test SMTP submission with STARTTLS (port 587)"""
+    print(f"\n{Fore.YELLOW}Testing SMTP submission with STARTTLS on port {SMTP_PORT}...{Style.RESET_ALL}")
     
     try:
-        # Create SSL context that accepts self-signed certificates
+        # Create SSL context for Let's Encrypt certificates
         context = ssl.create_default_context()
+        # Since we're connecting to localhost but cert is for lab.sethlakowske.com
         context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
+        context.verify_mode = ssl.CERT_NONE  # Accept hostname mismatch for testing
         
         # Connect to SMTP server
         server = smtplib.SMTP(MAIL_SERVER, SMTP_PORT)
@@ -78,11 +80,11 @@ def test_smtp_tls():
         
         # Quit
         server.quit()
-        print_success("SMTP TLS test completed successfully")
+        print_success("SMTP submission test completed successfully")
         return True
         
     except Exception as e:
-        print_error(f"SMTP TLS test failed: {e}")
+        print_error(f"SMTP submission test failed: {e}")
         return False
 
 def test_smtp_starttls():
@@ -90,10 +92,11 @@ def test_smtp_starttls():
     print(f"\n{Fore.YELLOW}Testing SMTP with STARTTLS on port {SMTP_STARTTLS_PORT}...{Style.RESET_ALL}")
     
     try:
-        # Create SSL context that accepts self-signed certificates
+        # Create SSL context for Let's Encrypt certificates
         context = ssl.create_default_context()
+        # Since we're connecting to localhost but cert is for lab.sethlakowske.com
         context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
+        context.verify_mode = ssl.CERT_NONE  # Accept hostname mismatch for testing
         
         # Connect to SMTP server
         server = smtplib.SMTP(MAIL_SERVER, SMTP_STARTTLS_PORT)
@@ -126,15 +129,65 @@ def test_smtp_starttls():
         print_error(f"SMTP STARTTLS test failed: {e}")
         return False
 
+def test_smtps():
+    """Test SMTPS with implicit TLS (port 465)"""
+    print(f"\n{Fore.YELLOW}Testing SMTPS with implicit TLS on port {SMTPS_PORT}...{Style.RESET_ALL}")
+    
+    try:
+        # Create SSL context for Let's Encrypt certificates
+        context = ssl.create_default_context()
+        # Since we're connecting to localhost but cert is for lab.sethlakowske.com
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE  # Accept hostname mismatch for testing
+        
+        # Connect to SMTPS server (implicit TLS)
+        server = smtplib.SMTP_SSL(MAIL_SERVER, SMTPS_PORT, context=context)
+        server.set_debuglevel(0)  # Set to 1 for verbose output
+        
+        print_success("Implicit TLS connection established")
+        
+        # Get cipher info
+        cipher = server.sock.cipher()
+        if cipher:
+            print_info(f"Cipher suite: {cipher[0]}")
+            print_info(f"Protocol: {cipher[1]}")
+            print_info(f"Cipher bits: {cipher[2]}")
+        
+        # Login
+        server.login(USERNAME, PASSWORD)
+        print_success(f"Authentication successful for {USERNAME}")
+        
+        # Send test email
+        msg = MIMEMultipart()
+        msg['From'] = USERNAME
+        msg['To'] = USERNAME
+        msg['Subject'] = f"SMTPS Test - {datetime.now()}"
+        
+        body = "This is a test email sent via SMTPS with implicit TLS encryption."
+        msg.attach(MIMEText(body, 'plain'))
+        
+        server.send_message(msg)
+        print_success("Test email sent successfully")
+        
+        # Quit
+        server.quit()
+        print_success("SMTPS test completed successfully")
+        return True
+        
+    except Exception as e:
+        print_error(f"SMTPS test failed: {e}")
+        return False
+
 def test_imap_ssl():
     """Test IMAP with SSL/TLS (port 993)"""
     print(f"\n{Fore.YELLOW}Testing IMAP with SSL/TLS on port {IMAP_PORT}...{Style.RESET_ALL}")
     
     try:
-        # Create SSL context that accepts self-signed certificates
+        # Create SSL context for Let's Encrypt certificates
         context = ssl.create_default_context()
+        # Since we're connecting to localhost but cert is for lab.sethlakowske.com
         context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
+        context.verify_mode = ssl.CERT_NONE  # Accept hostname mismatch for testing
         
         # Connect to IMAP server
         server = imaplib.IMAP4_SSL(MAIL_SERVER, IMAP_PORT, ssl_context=context)
@@ -220,7 +273,8 @@ def main():
     print(f"{Fore.YELLOW}Checking port availability...{Style.RESET_ALL}")
     ports = [
         (SMTP_STARTTLS_PORT, "SMTP STARTTLS"),
-        (SMTP_PORT, "SMTP TLS"),
+        (SMTP_PORT, "SMTP Submission"),
+        (SMTPS_PORT, "SMTPS"),
         (IMAP_STARTTLS_PORT, "IMAP STARTTLS"),
         (IMAP_PORT, "IMAP SSL/TLS")
     ]
@@ -240,7 +294,8 @@ def main():
     # Run tests
     results = []
     results.append(("SMTP STARTTLS", test_smtp_starttls()))
-    results.append(("SMTP TLS", test_smtp_tls()))
+    results.append(("SMTP Submission", test_smtp_submission()))
+    results.append(("SMTPS", test_smtps()))
     results.append(("IMAP SSL/TLS", test_imap_ssl()))
     results.append(("IMAP STARTTLS", test_imap_starttls()))
     

@@ -5,7 +5,7 @@ append_dot_mydomain = no
 readme_directory = no
 
 # Basic configuration
-myhostname = ${MAIL_SERVER_NAME}
+myhostname = mail.${MAIL_DOMAIN}
 mydomain = ${MAIL_DOMAIN}
 myorigin = $mydomain
 mydestination = $myhostname, localhost.$mydomain, localhost
@@ -21,9 +21,12 @@ smtpd_tls_cert_file=${SSL_CERT_FILE}
 smtpd_tls_key_file=${SSL_KEY_FILE}
 smtpd_tls_security_level=may
 smtpd_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1
+smtpd_tls_ciphers = high
+smtpd_tls_exclude_ciphers = aNULL, MD5, DES, 3DES, DES-CBC3-SHA, RC4-SHA, AES256-SHA, AES128-SHA
 smtpd_tls_loglevel = 1
 smtpd_tls_received_header = yes
 smtpd_tls_session_cache_database = btree:${data_directory}/smtpd_scache
+smtpd_tls_auth_only = no
 
 smtp_tls_security_level=may
 smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
