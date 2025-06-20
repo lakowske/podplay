@@ -108,21 +108,39 @@ service dovecot start
 
 # Function to tail and redirect logs for dual logging
 tail_mail_logs() {
-    # Tail system mail log and redirect to our structured log
-    tail -F /var/log/mail.log 2>/dev/null | while IFS= read -r line; do
-        timestamp=$(date -Iseconds)
-        structured_line="[$timestamp] [INFO] [MAIL] [SYSTEM]: $line"
-        echo "$structured_line" | tee -a /data/logs/mail/postfix.log
-    done &
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Starting dual logging for mail services..."
     
-    # Tail dovecot logs if they exist
+    # Tail Dovecot info logs (where LMTP activity is logged)
+    if [ -f /var/log/dovecot-info.log ]; then
+        tail -F /var/log/dovecot-info.log 2>/dev/null | while IFS= read -r line; do
+            timestamp=$(date -Iseconds)
+            structured_line="[$timestamp] [INFO] [MAIL] [DOVECOT]: $line"
+            echo "$structured_line"
+            echo "$structured_line" >> /data/logs/mail/dovecot-info.log
+        done &
+    fi
+    
+    # Tail Dovecot main logs
     if [ -f /var/log/dovecot.log ]; then
         tail -F /var/log/dovecot.log 2>/dev/null | while IFS= read -r line; do
             timestamp=$(date -Iseconds)
             structured_line="[$timestamp] [INFO] [MAIL] [DOVECOT]: $line"
-            echo "$structured_line" | tee -a /data/logs/mail/dovecot.log
+            echo "$structured_line"
+            echo "$structured_line" >> /data/logs/mail/dovecot.log
         done &
     fi
+    
+    # Monitor Postfix queue for activity
+    while true; do
+        sleep 5
+        queue_status=$(postqueue -p 2>/dev/null)
+        if [ "$queue_status" != "Mail queue is empty" ]; then
+            timestamp=$(date -Iseconds)
+            structured_line="[$timestamp] [INFO] [MAIL] [POSTFIX]: Queue activity detected"
+            echo "$structured_line"
+            echo "$structured_line" >> /data/logs/mail/postfix.log
+        fi
+    done &
 }
 
 # Keep container running and show logs
