@@ -10,6 +10,21 @@ echo "Starting BIND DNS server for domain: $DOMAIN_NAME"
 echo "Domain IP: $DOMAIN_IP"
 echo "DNS Forwarders: $DNS_FORWARDERS"
 
+# Setup logging infrastructure
+setup_logging() {
+    echo "[$(date -Iseconds)] [INFO] [BIND] [INIT]: Initializing DNS dual logging..."
+    
+    # Ensure log files exist with proper permissions
+    touch /data/logs/bind/{general,queries,security}.log
+    chown bind:loggroup /data/logs/bind/*.log
+    chmod 644 /data/logs/bind/*.log
+    
+    echo "[$(date -Iseconds)] [INFO] [BIND] [INIT]: DNS logging initialized"
+}
+
+# Call logging setup
+setup_logging
+
 # Create necessary directories
 mkdir -p /var/cache/bind /var/log/bind /etc/bind/zones
 

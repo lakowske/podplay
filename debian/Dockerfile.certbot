@@ -8,10 +8,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create directories and set ownership
 RUN mkdir -p /data/certificates /var/www/html && \
     chown -R certuser:certgroup /data/certificates && \
-    chmod 755 /data/certificates
+    chmod 755 /data/certificates && \
+    usermod -a -G loggroup certuser
 
 # Copy entrypoint script
-COPY certbot-entrypoint.sh /usr/local/bin/
+COPY debian/certbot-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/certbot-entrypoint.sh
 
 # Environment variables
@@ -25,8 +26,8 @@ VOLUME ["/data/certificates"]
 # Expose port 80 for Let's Encrypt standalone validation
 EXPOSE 80
 
-# Run as certuser to ensure proper certificate ownership
-USER certuser
+# Note: Keep as root for now to fix logging permissions, then switch to certuser in entrypoint
+# USER certuser
 
 ENTRYPOINT ["/usr/local/bin/certbot-entrypoint.sh"]
 CMD ["/bin/bash"]

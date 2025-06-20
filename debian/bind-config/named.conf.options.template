@@ -29,10 +29,18 @@ options {
     querylog yes;
 };
 
-// Logging configuration
+// Dual logging configuration (stdout + persistent files)
 logging {
-    channel default_log {
-        file "/var/log/bind/default.log" versions 3 size 5m;
+    channel stdout_log {
+        stderr;
+        severity info;
+        print-time yes;
+        print-severity yes;
+        print-category yes;
+    };
+    
+    channel general_log {
+        file "/data/logs/bind/general.log" versions 5 size 10m;
         severity info;
         print-time yes;
         print-severity yes;
@@ -40,11 +48,21 @@ logging {
     };
     
     channel query_log {
-        file "/var/log/bind/query.log" versions 3 size 5m;
+        file "/data/logs/bind/queries.log" versions 5 size 20m;
         severity info;
         print-time yes;
     };
     
-    category default { default_log; };
-    category queries { query_log; };
+    channel security_log {
+        file "/data/logs/bind/security.log" versions 5 size 10m;
+        severity warning;
+        print-time yes;
+        print-severity yes;
+    };
+    
+    // Dual output: both stdout and files
+    category default { stdout_log; general_log; };
+    category queries { stdout_log; query_log; };
+    category security { stdout_log; security_log; };
+    category lame-servers { null; }; // Suppress noisy lame server messages
 };
