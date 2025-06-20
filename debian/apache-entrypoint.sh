@@ -17,6 +17,21 @@ echo "Using domain: $FQDN"
 # Certificate directory
 CERT_DIR="$CERT_BASE/$FQDN"
 
+# Setup logging infrastructure
+setup_logging() {
+    echo "[$(date -Iseconds)] [INFO] [APACHE] [INIT]: Initializing dual logging..."
+    
+    # Ensure log files exist with proper permissions
+    touch /data/logs/apache/{access,error,ssl}.log
+    chown www-data:loggroup /data/logs/apache/*.log
+    chmod 644 /data/logs/apache/*.log
+    
+    echo "[$(date -Iseconds)] [INFO] [APACHE] [INIT]: Logging initialized"
+}
+
+# Call logging setup
+setup_logging
+
 # Wait for certificates to be available
 echo "Checking for certificates in $CERT_DIR..."
 while [ ! -f "$CERT_DIR/fullchain.pem" ] || [ ! -f "$CERT_DIR/privkey.pem" ]; do
@@ -43,6 +58,14 @@ cat > /etc/apache2/sites-available/000-default-ssl.conf << EOF
     SSLCipherSuite ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384
     SSLHonorCipherOrder on
     
+    # Dual logging configuration
+    LogFormat "[%{%Y-%m-%dT%H:%M:%S}t.%{msec_frac}t%{%z}t] [INFO] [APACHE] [ACCESS]: %h %l %u \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\" %D" combined_structured
+    LogFormat "[%{%Y-%m-%dT%H:%M:%S}t.%{msec_frac}t%{%z}t] [INFO] [APACHE] [SSL]: %h %{SSL_PROTOCOL}x %{SSL_CIPHER}x \"%r\" %>s" ssl_structured
+    
+    CustomLog /data/logs/apache/access.log combined_structured
+    CustomLog /data/logs/apache/ssl.log ssl_structured
+    ErrorLog /data/logs/apache/error.log
+    
     <Directory /var/www/html>
         Options Indexes FollowSymLinks
         AllowOverride All
@@ -59,6 +82,12 @@ cat > /etc/apache2/sites-available/000-default.conf << EOF
 <VirtualHost *:80>
     ServerName ${FQDN}
     DocumentRoot /var/www/html
+    
+    # Dual logging configuration
+    LogFormat "[%{%Y-%m-%dT%H:%M:%S}t.%{msec_frac}t%{%z}t] [INFO] [APACHE] [ACCESS]: %h %l %u \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\" %D" combined_structured
+    
+    CustomLog /data/logs/apache/access.log combined_structured
+    ErrorLog /data/logs/apache/error.log
     
     <Directory /var/www/html>
         Options Indexes FollowSymLinks
@@ -97,9 +126,16 @@ chown -R www-data:www-data /var/www/html
 # Set global ServerName to suppress warning
 echo "ServerName $FQDN" >> /etc/apache2/apache2.conf
 
+# Configure global logging format
+cat >> /etc/apache2/apache2.conf << EOF
+
+# Global logging configuration
+ErrorLogFormat "[%{%Y-%m-%dT%H:%M:%S}t.%{msec_frac}t%{%z}t] [ERROR] [APACHE] [ERROR]: [pid %P] [client %a] %M"
+EOF
+
 # Remove Apache PID file if it exists
 rm -f /var/run/apache2/apache2.pid
 
 # Start Apache in foreground
-echo "Starting Apache..."
+echo "[$(date -Iseconds)] [INFO] [APACHE] [INIT]: Starting Apache with dual logging..."
 exec apache2ctl -D FOREGROUND

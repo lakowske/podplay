@@ -8,6 +8,22 @@ export SSL_CERT_FILE=${SSL_CERT_FILE:-"/data/certificates/$MAIL_DOMAIN/fullchain
 export SSL_KEY_FILE=${SSL_KEY_FILE:-"/data/certificates/$MAIL_DOMAIN/privkey.pem"}
 export SSL_CHAIN_FILE=${SSL_CHAIN_FILE:-"/data/certificates/$MAIL_DOMAIN/fullchain.pem"}
 
+# Setup logging infrastructure
+setup_logging() {
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Initializing mail dual logging..."
+    
+    # Ensure log files exist with proper permissions
+    touch /data/logs/mail/{postfix,dovecot,dovecot-info,auth}.log
+    chown postfix:loggroup /data/logs/mail/postfix.log
+    chown dovecot:loggroup /data/logs/mail/dovecot*.log /data/logs/mail/auth.log
+    chmod 644 /data/logs/mail/*.log
+    
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Mail logging initialized"
+}
+
+# Call logging setup
+setup_logging
+
 echo "Starting mail server for domain: $MAIL_DOMAIN"
 echo "Server name: $MAIL_SERVER_NAME"
 
@@ -90,6 +106,28 @@ service postfix start
 echo "Starting Dovecot..."
 service dovecot start
 
+# Function to tail and redirect logs for dual logging
+tail_mail_logs() {
+    # Tail system mail log and redirect to our structured log
+    tail -F /var/log/mail.log 2>/dev/null | while IFS= read -r line; do
+        timestamp=$(date -Iseconds)
+        structured_line="[$timestamp] [INFO] [MAIL] [SYSTEM]: $line"
+        echo "$structured_line" | tee -a /data/logs/mail/postfix.log
+    done &
+    
+    # Tail dovecot logs if they exist
+    if [ -f /var/log/dovecot.log ]; then
+        tail -F /var/log/dovecot.log 2>/dev/null | while IFS= read -r line; do
+            timestamp=$(date -Iseconds)
+            structured_line="[$timestamp] [INFO] [MAIL] [DOVECOT]: $line"
+            echo "$structured_line" | tee -a /data/logs/mail/dovecot.log
+        done &
+    fi
+}
+
 # Keep container running and show logs
-echo "Mail services started successfully!"
-tail -f /var/log/mail.log 2>/dev/null || tail -f /dev/null
+echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Mail services started successfully!"
+tail_mail_logs
+
+# Keep the container running
+tail -f /dev/null

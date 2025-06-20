@@ -8,11 +8,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Enable necessary Apache modules
 RUN a2enmod ssl headers
 
-# Add www-data user to certgroup for certificate access
-RUN usermod -a -G certgroup www-data
+# Add www-data user to certgroup for certificate access and loggroup for logging
+RUN usermod -a -G certgroup,loggroup www-data
 
 # Copy entrypoint script
-COPY apache-entrypoint.sh /usr/local/bin/
+COPY debian/apache-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/apache-entrypoint.sh
 
 # Create document root
