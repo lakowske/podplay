@@ -2,6 +2,7 @@
 .PHONY: alpine alpine-all alpine-base alpine-apache alpine-bind alpine-mail alpine-certbot alpine-clean alpine-help
 .PHONY: debian debian-all debian-base debian-apache debian-bind debian-mail debian-certbot debian-clean debian-help
 .PHONY: build build-all build-base build-apache build-bind build-mail build-certbot
+.PHONY: pod-start pod-stop pod-rm pod-status pod-logs
 
 # Backward compatibility targets (delegate to Alpine)
 build-all: alpine-all
@@ -66,6 +67,35 @@ debian-clean:
 debian-help:
 	$(MAKE) -C debian help
 
+# Pod management targets
+pod-start:
+	@echo "Starting lab-services pod..."
+	@podman play kube debian/pod.yaml
+
+pod-stop:
+	@echo "Stopping lab-services pod..."
+	@podman pod stop lab-services || true
+
+pod-rm: pod-stop
+	@echo "Removing lab-services pod..."
+	@podman pod rm lab-services || true
+
+pod-status:
+	@echo "Pod status:"
+	@podman pod ps --filter name=lab-services
+	@echo ""
+	@echo "Container status:"
+	@podman ps --filter pod=lab-services
+
+pod-logs:
+	@echo "Showing logs for all containers in lab-services pod..."
+	@for container in $$(podman ps -q --filter pod=lab-services); do \
+		name=$$(podman inspect $$container --format '{{.Name}}'); \
+		echo "=== Logs for $$name ==="; \
+		podman logs $$container --tail 50; \
+		echo ""; \
+	done
+
 # Global targets
 clean: alpine-clean debian-clean
 	@echo "All images cleaned"
@@ -95,6 +125,13 @@ help:
 	@echo "Backward compatibility (defaults to Alpine):"
 	@echo "  make build-all     - Same as alpine-all"
 	@echo "  make build-*       - Same as alpine-*"
+	@echo ""
+	@echo "Pod management:"
+	@echo "  pod-start          - Start the lab-services pod"
+	@echo "  pod-stop           - Stop the lab-services pod"
+	@echo "  pod-rm             - Remove the lab-services pod"
+	@echo "  pod-status         - Show pod and container status"
+	@echo "  pod-logs           - Show logs from all containers"
 	@echo ""
 	@echo "Global targets:"
 	@echo "  clean              - Remove all images (Alpine and Debian)"
