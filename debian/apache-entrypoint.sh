@@ -136,6 +136,26 @@ EOF
 # Remove Apache PID file if it exists
 rm -f /var/run/apache2/apache2.pid
 
+# Start certificate monitoring daemon
+start_certificate_monitor() {
+    echo "[$(date -Iseconds)] [INFO] [APACHE] [CERT-MONITOR]: Starting certificate hot-reload monitor..."
+    
+    # Start certificate monitor in background
+    /data/src/cert_manager.py \
+        --hot-reload \
+        --service-type apache \
+        --domain "$FQDN" \
+        /data/certificates/ \
+        >> /data/logs/apache/cert-reload.log 2>&1 &
+    
+    CERT_MONITOR_PID=$!
+    echo $CERT_MONITOR_PID > /tmp/cert-monitor.pid
+    echo "[$(date -Iseconds)] [INFO] [APACHE] [CERT-MONITOR]: Monitor started (PID: $CERT_MONITOR_PID)"
+}
+
+# Start certificate monitor before Apache
+start_certificate_monitor
+
 # Start Apache in foreground
-echo "[$(date -Iseconds)] [INFO] [APACHE] [INIT]: Starting Apache with dual logging..."
+echo "[$(date -Iseconds)] [INFO] [APACHE] [INIT]: Starting Apache with dual logging and certificate hot-reload..."
 exec apache2ctl -D FOREGROUND

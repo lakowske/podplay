@@ -143,8 +143,28 @@ tail_mail_logs() {
     done &
 }
 
+# Start certificate monitoring daemon
+start_certificate_monitor() {
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [CERT-MONITOR]: Starting certificate hot-reload monitor..."
+    
+    # Start certificate monitor in background
+    /data/src/cert_manager.py \
+        --hot-reload \
+        --service-type mail \
+        --domain "$MAIL_DOMAIN" \
+        /data/certificates/ \
+        >> /data/logs/mail/cert-reload.log 2>&1 &
+    
+    CERT_MONITOR_PID=$!
+    echo $CERT_MONITOR_PID > /tmp/cert-monitor.pid
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [CERT-MONITOR]: Monitor started (PID: $CERT_MONITOR_PID)"
+}
+
+# Start certificate monitor
+start_certificate_monitor
+
 # Keep container running and show logs
-echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Mail services started successfully!"
+echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Mail services started successfully with certificate hot-reload!"
 tail_mail_logs
 
 # Keep the container running
