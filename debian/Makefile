@@ -97,7 +97,7 @@ run-examples: volumes all
 
 run-certbot: volumes
 	podman run --rm \
-		-v certs:/data/certificates \
+		-v certs:/data/certificates:rw,z \
 		-v logs:/data/logs \
 		-e CERT_TYPE=self-signed \
 		-e DOMAIN=$(DOMAIN) \
@@ -106,7 +106,7 @@ run-certbot: volumes
 run-apache: volumes
 	podman run -d \
 		--name apache \
-		-v certs:/data/certificates:ro \
+		-v certs:/data/certificates:rw,z \
 		-v logs:/data/logs \
 		-p 8080:80 -p 8443:443 \
 		-e DOMAIN=$(DOMAIN) \
@@ -124,7 +124,7 @@ run-bind: volumes
 run-mail: volumes
 	podman run -d \
 		--name mail \
-		-v certs:/data/certificates:ro \
+		-v certs:/data/certificates:rw,z \
 		-v logs:/data/logs \
 		-p 25:25 -p 587:587 -p 993:993 \
 		-e MAIL_DOMAIN=$(DOMAIN) \
