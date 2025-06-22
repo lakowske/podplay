@@ -29,8 +29,30 @@ setup_logging() {
     echo "[$(date -Iseconds)] [INFO] [APACHE] [INIT]: Logging initialized"
 }
 
+# Setup authentication infrastructure
+setup_authentication() {
+    echo "[$(date -Iseconds)] [INFO] [APACHE] [AUTH]: Initializing authentication system..."
+    
+    # Create authentication data directories with proper permissions
+    mkdir -p /data/user-data/pending/{registrations,resets,sessions,rate_limits}
+    chown -R www-data:www-data /data/user-data/pending
+    
+    # Create authentication log file
+    touch /data/logs/apache/auth.log
+    chown www-data:loggroup /data/logs/apache/auth.log
+    chmod 644 /data/logs/apache/auth.log
+    
+    # Ensure CGI scripts are executable and have proper paths
+    find /var/www/cgi-bin -name "*.py" -exec chmod +x {} \;
+    
+    echo "[$(date -Iseconds)] [INFO] [APACHE] [AUTH]: Authentication system initialized"
+}
+
 # Call logging setup
 setup_logging
+
+# Call authentication setup  
+setup_authentication
 
 # Wait for certificates to be available
 echo "Checking for certificates in $CERT_DIR..."
@@ -72,8 +94,41 @@ cat > /etc/apache2/sites-available/000-default-ssl.conf << EOF
         Require all granted
     </Directory>
     
-    # Add a header to indicate HTTPS
+    # CGI configuration for authentication
+    ScriptAlias /cgi-bin/ /var/www/cgi-bin/
+    <Directory "/var/www/cgi-bin">
+        Options +ExecCGI
+        AddHandler cgi-script .py
+        Require all granted
+        
+        # Pass environment variables to CGI scripts
+        PassEnv DOMAIN
+        SetEnv PYTHONPATH /data/.venv/lib/python3.11/site-packages
+    </Directory>
+    
+    # Protected portal area
+    <Directory "/var/www/html/portal">
+        Options -Indexes
+        
+        # Check for valid session using mod_rewrite
+        RewriteEngine On
+        RewriteCond %{HTTP_COOKIE} !session_id=sess_[a-zA-Z0-9]{32}
+        RewriteRule ^.*$ /auth/login.html?redirect=%{REQUEST_URI} [R,L]
+    </Directory>
+    
+    # Security headers for auth pages
+    <Directory "/var/www/html/auth">
+        Header always set X-Frame-Options "DENY"
+        Header always set X-Content-Type-Options "nosniff"
+        Header always set X-XSS-Protection "1; mode=block"
+    </Directory>
+    
+    # Add security headers
     Header always set X-Protocol "HTTPS"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
 </VirtualHost>
 EOF
 
@@ -106,16 +161,28 @@ a2ensite 000-default-ssl
 # Create simple test page for debugging
 echo "It works!" > /var/www/html/test.txt
 
-# Create a simple index page
+# Create a simple index page with authentication links
 cat > /var/www/html/index.html << EOF
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Apache with SSL</title>
+    <title>PodPlay - ${FQDN}</title>
+    <link rel="stylesheet" href="/static/css/auth.css">
 </head>
 <body>
-    <h1>Apache is running with SSL!</h1>
-    <p>This page is served over HTTPS using certificates from the shared volume.</p>
+    <div class="auth-container">
+        <h1>Welcome to PodPlay</h1>
+        <p>This page is served over HTTPS using certificates from Let's Encrypt.</p>
+        
+        <div class="auth-links">
+            <a href="/auth/login.html" class="btn btn-primary">Login</a>
+            <a href="/auth/register.html">Create Account</a>
+        </div>
+        
+        <hr>
+        <p><strong>Domain:</strong> ${FQDN}</p>
+        <p><strong>Services:</strong> Apache with SSL, User Authentication, Mail Server</p>
+    </div>
 </body>
 </html>
 EOF

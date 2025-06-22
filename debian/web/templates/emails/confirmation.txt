@@ -1,0 +1,13 @@
+Hello {username},
+
+Welcome to PodPlay! Please confirm your email address by clicking the link below:
+
+{confirmation_url}
+
+This link will expire in 1 hour.
+
+If you did not create an account, please ignore this email.
+
+Best regards,
+The PodPlay Team
+{domain}

@@ -3,10 +3,11 @@ FROM base-debian:latest
 RUN apt-get update && apt-get install -y --no-install-recommends \
     apache2 \
     ssl-cert \
+    python3-yaml \
     && rm -rf /var/lib/apt/lists/*
 
-# Enable necessary Apache modules
-RUN a2enmod ssl headers
+# Enable necessary Apache modules including CGI for authentication
+RUN a2enmod ssl headers rewrite cgi
 
 # Add www-data user to certgroup for certificate access and loggroup for logging
 RUN usermod -a -G certgroup,loggroup www-data
@@ -15,9 +16,21 @@ RUN usermod -a -G certgroup,loggroup www-data
 COPY debian/apache-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/apache-entrypoint.sh
 
-# Create document root
-RUN mkdir -p /var/www/html && \
-    chown -R www-data:www-data /var/www/html
+# Create document root and authentication directories
+RUN mkdir -p /var/www/html /var/www/cgi-bin /var/www/html/auth /var/www/html/portal \
+    /var/www/html/static/css /var/www/html/static/js \
+    /var/www/templates/emails /var/www/templates/pages && \
+    chown -R www-data:www-data /var/www
+
+# Copy authentication web content
+COPY debian/web/ /var/www/
+
+# Copy authentication configuration templates
+COPY debian/apache-auth-configs/ /etc/apache2/auth-templates/
+
+# Set permissions for CGI scripts and make them executable
+RUN chmod -R 755 /var/www/cgi-bin && \
+    find /var/www/cgi-bin -name "*.py" -exec chmod +x {} \;
 
 EXPOSE 80 443
 

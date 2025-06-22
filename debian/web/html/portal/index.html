@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PodPlay Portal</title>
+    <link rel="stylesheet" href="/static/css/auth.css">
+</head>
+<body>
+    <div class="portal-container">
+        <div class="portal-header">
+            <h1>PodPlay Portal</h1>
+            <nav class="portal-nav">
+                <a href="/portal/">Home</a>
+                <a href="/portal/profile.html">Profile</a>
+                <a href="/portal/settings.html">Settings</a>
+                <a href="/cgi-bin/logout.py">Logout</a>
+            </nav>
+        </div>
+        
+        <div class="portal-content">
+            <div class="user-info">
+                <h2>Welcome to PodPlay!</h2>
+                <p>You are successfully logged in.</p>
+            </div>
+            
+            <h3>Available Services</h3>
+            <div class="services-list">
+                <div class="service-card">
+                    <h3>Email</h3>
+                    <p>Access your email account</p>
+                </div>
+                
+                <div class="service-card">
+                    <h3>WebDAV</h3>
+                    <p>File storage and sharing</p>
+                </div>
+                
+                <div class="service-card">
+                    <h3>Git</h3>
+                    <p>Version control repositories</p>
+                </div>
+                
+                <div class="service-card">
+                    <h3>Web Hosting</h3>
+                    <p>Personal web space</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

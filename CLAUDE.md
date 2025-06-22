@@ -76,3 +76,50 @@ make pod-status       # Check status
 make pod-logs         # View logs
 make pod-down         # Stop services
 ```
+
+## Implementation Guidelines
+
+### CRITICAL: Always Review Existing Architecture Before Implementation
+
+Before implementing any technical specification:
+
+1. **Architecture Discovery**
+   - Read all Dockerfiles to understand base images and existing infrastructure
+   - Check Makefiles to understand build/deployment workflows  
+   - Review existing entrypoint scripts and their patterns
+   - Identify existing volume mounts and data structures
+   - Find existing configuration management (templates, scripts)
+
+2. **Integration Requirements**
+   - NEVER create standalone implementations that duplicate existing infrastructure
+   - ALWAYS extend existing Dockerfiles rather than creating new ones
+   - ALWAYS use existing base images (e.g., `base-debian:latest`)
+   - ALWAYS follow existing group/user patterns (`certgroup`, `loggroup`)
+   - ALWAYS use existing directory structures (`/data/src/`, `/data/logs/`)
+
+3. **Component Extension Checklist**
+   - [ ] Does this extend an existing service? Use its existing Dockerfile
+   - [ ] Does this need new Python libraries? Add to existing venv setup
+   - [ ] Does this need new Apache modules? Add to existing a2enmod
+   - [ ] Does this need new volumes? Use existing volume structure
+   - [ ] Does this need logging? Follow existing dual logging patterns
+   - [ ] Does this need configuration? Extend existing entrypoint scripts
+
+4. **File Organization**
+   - Place new files in the appropriate implementation directory (`alpine/` or `debian/`)
+   - Follow existing naming conventions (e.g., `service-entrypoint.sh`)
+   - Group related files logically within the implementation directory
+   - Avoid creating parallel directory structures
+
+5. **Before Starting Implementation**
+   - Ask yourself: "What existing component does this extend?"
+   - Identify the exact Dockerfile and entrypoint that need modification
+   - Map new requirements to existing infrastructure patterns
+   - Plan integration points before writing any code
+
+**Example: Adding authentication to Apache**
+- ✅ Extend `/debian/Dockerfile.apache` with CGI support
+- ✅ Extend `/debian/apache-entrypoint.sh` with auth setup  
+- ✅ Use existing `/data/user-data/` volume structure
+- ✅ Follow existing logging patterns
+- ❌ Create new `/apache/` directory with standalone Dockerfile
