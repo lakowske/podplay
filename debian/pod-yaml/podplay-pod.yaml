@@ -16,6 +16,9 @@ spec:
     - name: logs
       persistentVolumeClaim:
         claimName: podplay-logs
+    - name: user-data
+      persistentVolumeClaim:
+        claimName: podplay-user-data
   
   # Service containers
   containers:
@@ -95,6 +98,8 @@ spec:
           readOnly: true
         - name: logs
           mountPath: /data/logs
+        - name: user-data
+          mountPath: /data/user-data
       ports:
         - containerPort: 25
           hostPort: 25

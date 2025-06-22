@@ -6,3 +6,6 @@ secure-smtplib==0.1.1
 
 # File system monitoring
 watchdog==4.0.0
+
+# Configuration management
+PyYAML==6.0.1

@@ -29,6 +29,29 @@ podman run -v certs:/data/certificates ...
 podman run -v ./certificates:/data/certificates ...
 ```
 
+## Certificate Volume Management
+
+### Important: Preserve Production Certificates
+- **NEVER** remove the `certs` volume containing production Let's Encrypt certificates
+- Let's Encrypt has rate limits (5 certificates per domain per week)
+- Removing the certificates volume will force re-generation and may hit rate limits
+- Only remove the certificates volume during initial development or if certificates are corrupted
+
+### Safe Development Practices
+```bash
+# Safe: Only rebuild images, preserve volumes
+make clean && make all
+
+# Safe: Stop and restart pods without removing volumes
+make pod-down && make pod-up
+
+# DANGER: Avoid this in production - will trigger new certificate generation
+make clean-volumes
+
+# Safe alternative: Only clean specific volumes if needed
+podman volume rm logs user-data  # Keep certs volume intact
+```
+
 ## Service Operations
 
 ### Quick Reference

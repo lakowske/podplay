@@ -37,9 +37,9 @@ smtpd_sasl_path = private/auth
 smtpd_sasl_auth_enable = yes
 smtpd_recipient_restrictions = permit_sasl_authenticated,permit_mynetworks,reject_unauth_destination
 
-# Virtual mailbox configuration following Debian conventions
+# Virtual mailbox configuration using user-data structure
 virtual_mailbox_domains = ${MAIL_DOMAIN}
-virtual_mailbox_base = /var/spool/mail/vhosts
+virtual_mailbox_base = /data/user-data
 virtual_mailbox_maps = hash:/etc/postfix/vmailbox
 virtual_uid_maps = static:vmail
 virtual_gid_maps = static:vmail

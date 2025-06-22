@@ -69,33 +69,111 @@ fi
 envsubst '${MAIL_SERVER_NAME} ${MAIL_DOMAIN} ${SSL_CERT_FILE} ${SSL_KEY_FILE} ${SSL_CHAIN_FILE}' \
     < /etc/postfix/main.cf.template > /etc/postfix/main.cf
 
-# Create admin user mailbox directory following Debian structure
-echo "Creating admin user: admin@$MAIL_DOMAIN"
-mkdir -p "/var/spool/mail/vhosts/$MAIL_DOMAIN/admin"
-chown -R vmail:vmail "/var/spool/mail/vhosts/$MAIL_DOMAIN"
+# Setup user management infrastructure
+setup_user_management() {
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [USER-MANAGER]: Setting up user data structure..."
+    
+    # Create user-data directory structure
+    mkdir -p /data/user-data/{config,users,shared/{public,templates,admin/{user-backups,migration-tools}}}
+    
+    # Create default user configuration if none exists
+    if [ ! -f /data/user-data/config/users.yaml ]; then
+        cat > /data/user-data/config/users.yaml << EOF
+version: "1.0"
+domains:
+  - name: "${MAIL_DOMAIN}"
+    users:
+      - username: "admin"
+        password: "password"
+        aliases: ["postmaster", "hostmaster", "root"]
+        quota: "1G"
+        enabled: true
+        services: ["mail"]
+test_users:
+  - username: "test1"
+    password: "password1"
+    domain: "${MAIL_DOMAIN}"
+    quota: "50M"
+    services: ["mail"]
+EOF
+    fi
+    
+    # Create default quota configuration
+    if [ ! -f /data/user-data/config/quotas.yaml ]; then
+        cat > /data/user-data/config/quotas.yaml << EOF
+default_quotas:
+  test_users: "50M"
+  regular_users: "500M"
+  admin_users: "2G"
 
-# Create Postfix virtual maps following Debian format
-echo "admin@$MAIL_DOMAIN    $MAIL_DOMAIN/admin/" > /etc/postfix/vmailbox
-postmap /etc/postfix/vmailbox
+service_quotas:
+  mail: "50%"
+  files: "30%"
+  git: "15%"
+  www: "5%"
 
-# Create virtual aliases file
-echo "postmaster@$MAIL_DOMAIN    admin@$MAIL_DOMAIN" > /etc/postfix/valias
-echo "hostmaster@$MAIL_DOMAIN    admin@$MAIL_DOMAIN" >> /etc/postfix/valias
-postmap /etc/postfix/valias
+monitoring:
+  warning_threshold: 80
+  critical_threshold: 95
+  cleanup_threshold: 98
+EOF
+    fi
+    
+    # Set proper ownership
+    chown -R vmail:vmail /data/user-data/users
+    chmod -R 755 /data/user-data/config
+    
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [USER-MANAGER]: User data structure initialized"
+}
 
-# Create standard aliases
-echo "postmaster: admin@$MAIL_DOMAIN" > /etc/postfix/aliases
-echo "root: admin@$MAIL_DOMAIN" >> /etc/postfix/aliases
-postalias /etc/postfix/aliases
+# Start user management daemon
+start_user_manager() {
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [USER-MANAGER]: Starting user configuration hot-reload monitor..."
+    
+    # Start user manager in background
+    /data/.venv/bin/python /data/src/user_manager.py \
+        --hot-reload \
+        --watch /data/user-data/config/ \
+        --service-type mail \
+        --domain "$MAIL_DOMAIN" \
+        >> /data/logs/mail/user-reload.log 2>&1 &
+    
+    USER_MANAGER_PID=$!
+    echo $USER_MANAGER_PID > /tmp/user-manager.pid
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [USER-MANAGER]: Monitor started (PID: $USER_MANAGER_PID)"
+}
 
-# Note: Using static authentication in dovecot.conf for simplicity
+# Initialize user management
+setup_user_management
+
+# Generate initial user configuration files
+echo "[$(date -Iseconds)] [INFO] [MAIL] [USER-MANAGER]: Generating initial service configuration files..."
+/data/.venv/bin/python /data/src/user_manager.py \
+    --hot-reload \
+    --watch /data/user-data/config/ \
+    --service-type mail \
+    --domain "$MAIL_DOMAIN" \
+    > /tmp/user-config-init.log 2>&1 &
+
+INIT_PID=$!
+sleep 3  # Allow initial configuration generation
+kill $INIT_PID 2>/dev/null || true
+
+# Verify configuration files were created
+if [ ! -f /etc/postfix/vmailbox ] || [ ! -f /etc/dovecot/passwd ]; then
+    echo "[$(date -Iseconds)] [ERROR] [MAIL] [USER-MANAGER]: Failed to generate initial configuration files"
+    exit 1
+fi
+
+echo "[$(date -Iseconds)] [INFO] [MAIL] [USER-MANAGER]: Initial configuration files generated"
 
 echo ""
 echo "Mail server configuration complete!"
 echo "  - SMTP: port 25 (plain), 587 (TLS)"
 echo "  - IMAP: port 143 (plain), 993 (TLS)"
 echo "  - POP3: port 110 (plain), 995 (TLS)"
-echo "  - Admin account: admin@$MAIL_DOMAIN (password: password)"
+echo "  - User management: Dynamic configuration from /data/user-data/config/users.yaml"
+echo "  - Default users: admin@$MAIL_DOMAIN, test1@$MAIL_DOMAIN"
 echo ""
 
 # Start Postfix
@@ -163,8 +241,11 @@ start_certificate_monitor() {
 # Start certificate monitor
 start_certificate_monitor
 
+# Start user manager
+start_user_manager
+
 # Keep container running and show logs
-echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Mail services started successfully with certificate hot-reload!"
+echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Mail services started successfully with certificate and user hot-reload!"
 tail_mail_logs
 
 # Keep the container running

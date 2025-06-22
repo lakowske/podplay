@@ -1,5 +1,6 @@
 .PHONY: all base apache bind mail certbot clean help volumes clean-volumes test-logging run-examples
 .PHONY: pod-init pod-up pod-down pod-status pod-logs pod-renewal pod-cert-cleanup
+.PHONY: user-add user-remove user-list user-test user-reload
 
 # Debian-specific targets
 all: apache bind mail certbot
@@ -24,15 +25,18 @@ volumes:
 	@echo "Creating Podplay volumes..."
 	podman volume create certs || true
 	podman volume create logs || true
+	podman volume create user-data || true
 	@echo "Volumes created:"
-	@echo "  - certs: /data/certificates (certificate storage)"
-	@echo "  - logs:  /data/logs (persistent logging)"
+	@echo "  - certs:     /data/certificates (certificate storage)"
+	@echo "  - logs:      /data/logs (persistent logging)"
+	@echo "  - user-data: /data/user-data (user configurations and data)"
 
 clean-volumes:
 	@echo "Warning: This will remove all Podplay volumes and their data!"
 	@read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		podman volume rm user-data || true; \
 		podman volume rm logs || true; \
 		podman volume rm certs || true; \
 		echo "Volumes removed"; \
@@ -127,6 +131,7 @@ run-mail: volumes
 		--name mail \
 		-v certs:/data/certificates:rw,z \
 		-v logs:/data/logs \
+		-v user-data:/data/user-data \
 		-p 25:25 -p 587:587 -p 993:993 \
 		-e MAIL_DOMAIN=$(DOMAIN) \
 		-e MAIL_SERVER_NAME=mail.$(DOMAIN) \
@@ -184,6 +189,62 @@ pod-renewal: volumes
 	@echo "This will attempt to renew existing Let's Encrypt certificates"
 	podman play kube pod-yaml/podplay-renewal-pod.yaml
 
+# User management targets
+user-add:
+	@if [ -z "$(USER)" ] || [ -z "$(PASS)" ] || [ -z "$(DOMAIN)" ]; then \
+		echo "Error: USER, PASS, and DOMAIN are required"; \
+		echo "Usage: make user-add USER=username PASS=password DOMAIN=example.com [QUOTA=100M] [SERVICES=mail]"; \
+		exit 1; \
+	fi
+	@echo "Adding user $(USER)@$(DOMAIN)..."
+	@podman run --rm \
+		-v user-data:/data/user-data \
+		podplay-mail-debian:latest \
+		/data/src/user_manager.py --add-user \
+		--user $(USER) --password $(PASS) --domain $(DOMAIN) \
+		--quota $(if $(QUOTA),$(QUOTA),100M) \
+		--services $(if $(SERVICES),$(SERVICES),mail)
+
+user-remove:
+	@if [ -z "$(USER)" ] || [ -z "$(DOMAIN)" ]; then \
+		echo "Error: USER and DOMAIN are required"; \
+		echo "Usage: make user-remove USER=username DOMAIN=example.com"; \
+		exit 1; \
+	fi
+	@echo "Removing user $(USER)@$(DOMAIN)..."
+	@podman run --rm \
+		-v user-data:/data/user-data \
+		podplay-mail-debian:latest \
+		/data/src/user_manager.py --remove-user \
+		--user $(USER) --domain $(DOMAIN)
+
+user-list:
+	@echo "Listing users$(if $(DOMAIN), for domain $(DOMAIN))..."
+	@podman run --rm \
+		-v user-data:/data/user-data \
+		podplay-mail-debian:latest \
+		/data/src/user_manager.py --list-users $(if $(DOMAIN),--domain $(DOMAIN))
+
+user-test:
+	@if [ -z "$(USER)" ] || [ -z "$(PASS)" ] || [ -z "$(DOMAIN)" ]; then \
+		echo "Error: USER, PASS, and DOMAIN are required"; \
+		echo "Usage: make user-test USER=username PASS=password DOMAIN=example.com"; \
+		exit 1; \
+	fi
+	@echo "Testing authentication for $(USER)@$(DOMAIN)..."
+	@echo "Note: This requires a running mail service container"
+	@podman exec -it $$(podman ps --filter "name=podplay-mail" --format "{{.Names}}" | head -1) \
+		/data/src/user_manager.py --test-auth \
+		--user $(USER) --password $(PASS) --domain $(DOMAIN) || \
+		echo "Error: No running mail container found. Use 'make pod-up' first."
+
+user-reload:
+	@echo "Forcing user configuration reload..."
+	@echo "Note: This requires a running mail service container"
+	@podman exec -it $$(podman ps --filter "name=podplay-mail" --format "{{.Names}}" | head -1) \
+		touch /data/user-data/config/users.yaml || \
+		echo "Error: No running mail container found. Use 'make pod-up' first."
+
 help:
 	@echo "Debian Implementation Targets:"
 	@echo ""
@@ -209,12 +270,23 @@ help:
 	@echo "  pod-renewal   - Run certificate renewal"
 	@echo ""
 	@echo "Volume Management:"
-	@echo "  volumes      - Create required volumes (certs, logs)"
+	@echo "  volumes      - Create required volumes (certs, logs, user-data)"
 	@echo "  clean-volumes - Remove all volumes (with confirmation)"
 	@echo ""
 	@echo "Testing:"
 	@echo "  test-logging - Test dual logging functionality"
 	@echo "  run-examples - Show example run commands"
+	@echo ""
+	@echo "User Management:"
+	@echo "  user-add USER=<user> PASS=<pass> DOMAIN=<domain> [QUOTA=100M] [SERVICES=mail]"
+	@echo "                   - Add a new user"
+	@echo "  user-remove USER=<user> DOMAIN=<domain>"
+	@echo "                   - Remove a user"
+	@echo "  user-list [DOMAIN=<domain>]"
+	@echo "                   - List all users or users for specific domain"
+	@echo "  user-test USER=<user> PASS=<pass> DOMAIN=<domain>"
+	@echo "                   - Test user authentication (requires running mail service)"
+	@echo "  user-reload      - Force user configuration reload (requires running mail service)"
 	@echo ""
 	@echo "Individual Services:"
 	@echo "  run-certbot DOMAIN=<domain> - Generate certificates"
