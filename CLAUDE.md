@@ -28,3 +28,28 @@ podman run -v certs:/data/certificates ...
 # Avoid: Host mount (causes permission issues)
 podman run -v ./certificates:/data/certificates ...
 ```
+
+## Service Operations
+
+### Quick Reference
+- The **QUICKSTART.md** file contains the complete deployment workflow and troubleshooting commands
+- When asked to operate PodPlay services, refer to QUICKSTART.md for:
+  - Step-by-step deployment workflow using Make targets
+  - Management commands for pod operations
+  - Troubleshooting procedures for common issues
+  - Service access information (ports, URLs)
+
+### Key Commands from QUICKSTART.md
+```bash
+# Deployment workflow
+make all              # Build all images
+make volumes          # Create volumes
+make pod-init         # Generate certificates
+make pod-cert-cleanup # Remove certificate pod
+make pod-up           # Start services
+
+# Management
+make pod-status       # Check status
+make pod-logs         # View logs
+make pod-down         # Stop services
+```

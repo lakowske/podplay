@@ -1,4 +1,5 @@
 .PHONY: all base apache bind mail certbot clean help volumes clean-volumes test-logging run-examples
+.PHONY: pod-init pod-up pod-down pod-status pod-logs pod-renewal pod-cert-cleanup
 
 # Debian-specific targets
 all: apache bind mail certbot
@@ -131,6 +132,58 @@ run-mail: volumes
 		-e MAIL_SERVER_NAME=mail.$(DOMAIN) \
 		podplay-mail-debian:latest
 
+# Pod deployment targets
+pod-init: volumes
+	@echo "Starting certificate initialization pod..."
+	@echo "This will generate SSL certificates for lab.sethlakowske.com"
+	@echo "Port 8080 must be available for Let's Encrypt validation"
+	podman play kube pod-yaml/podplay-init-pod.yaml
+	@echo ""
+	@echo "Certificate initialization started. Monitor with:"
+	@echo "  podman logs -f podplay-init-certbot"
+	@echo ""
+	@echo "When complete, clean up with:"
+	@echo "  make pod-cert-cleanup"
+
+pod-cert-cleanup:
+	@echo "Cleaning up certificate initialization pod..."
+	@if podman pod exists podplay-init 2>/dev/null; then \
+		echo "Removing completed certificate pod..."; \
+		podman play kube --down pod-yaml/podplay-init-pod.yaml || true; \
+	else \
+		echo "Certificate pod already cleaned up automatically"; \
+	fi
+	@echo "Ready to start services with:"
+	@echo "  make pod-up"
+
+pod-up: volumes
+	@echo "Starting PodPlay services pod..."
+	@echo "This will start Apache, BIND DNS, and Mail services"
+	podman play kube pod-yaml/podplay-pod.yaml
+	@echo ""
+	@echo "Services starting. Check status with:"
+	@echo "  make pod-status"
+
+pod-down:
+	@echo "Stopping PodPlay services..."
+	podman play kube --down pod-yaml/podplay-pod.yaml || true
+
+pod-status:
+	@echo "PodPlay pod status:"
+	@podman pod ps
+	@echo ""
+	@echo "Container status:"
+	@podman ps --pod --format "table {{.Names}}\t{{.Pod}}\t{{.Status}}"
+
+pod-logs:
+	@echo "Showing PodPlay pod logs..."
+	podman pod logs -f podplay
+
+pod-renewal: volumes
+	@echo "Running certificate renewal pod..."
+	@echo "This will attempt to renew existing Let's Encrypt certificates"
+	podman play kube pod-yaml/podplay-renewal-pod.yaml
+
 help:
 	@echo "Debian Implementation Targets:"
 	@echo ""
@@ -142,6 +195,19 @@ help:
 	@echo "  mail     - Build Debian mail server container"
 	@echo "  certbot  - Build Debian Certbot container"
 	@echo ""
+	@echo "Pod Deployment Workflow:"
+	@echo "  1. make all           - Build all container images"
+	@echo "  2. make volumes       - Create required volumes"
+	@echo "  3. make pod-init      - Generate SSL certificates"
+	@echo "  4. make pod-cert-cleanup - Clean up certificate pod"
+	@echo "  5. make pod-up        - Start PodPlay services"
+	@echo ""
+	@echo "Pod Management:"
+	@echo "  pod-status    - Show pod and container status"
+	@echo "  pod-logs      - Follow pod logs"
+	@echo "  pod-down      - Stop PodPlay services pod"
+	@echo "  pod-renewal   - Run certificate renewal"
+	@echo ""
 	@echo "Volume Management:"
 	@echo "  volumes      - Create required volumes (certs, logs)"
 	@echo "  clean-volumes - Remove all volumes (with confirmation)"
@@ -150,7 +216,7 @@ help:
 	@echo "  test-logging - Test dual logging functionality"
 	@echo "  run-examples - Show example run commands"
 	@echo ""
-	@echo "Running Services:"
+	@echo "Individual Services:"
 	@echo "  run-certbot DOMAIN=<domain> - Generate certificates"
 	@echo "  run-apache DOMAIN=<domain>  - Run Apache web server"  
 	@echo "  run-bind DOMAIN=<domain>    - Run DNS server"
