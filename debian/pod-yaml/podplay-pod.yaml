@@ -34,6 +34,8 @@ spec:
           readOnly: true
         - name: logs
           mountPath: /data/logs
+        - name: user-data
+          mountPath: /data/user-data
       ports:
         - containerPort: 80
           hostPort: 8080

@@ -1,138 +1,117 @@
-.PHONY: help clean
-.PHONY: alpine alpine-all alpine-base alpine-apache alpine-bind alpine-mail alpine-certbot alpine-clean alpine-help
-.PHONY: debian debian-all debian-base debian-apache debian-bind debian-mail debian-certbot debian-clean debian-help
-.PHONY: build build-all build-base build-apache build-bind build-mail build-certbot
-.PHONY: pod-start pod-stop pod-rm pod-status pod-logs
+.PHONY: help clean all base apache bind mail certbot volumes pod-init pod-cert-cleanup pod-up pod-down pod-status pod-logs auth-cli-install auth-cli-bootstrap auth-cli-test auth-cli-test-quick auth-logs-monitor auth-logs-check
 
-# Backward compatibility targets (delegate to Alpine)
-build-all: alpine-all
-build: alpine-base
-build-base: alpine-base
-build-apache: alpine-apache
-build-bind: alpine-bind
-build-mail: alpine-mail
-build-certbot: alpine-certbot
-
-# Alpine targets (delegate to alpine/Makefile)
-alpine: alpine-base
-
-alpine-all:
-	$(MAKE) -C alpine all
-
-alpine-base:
-	$(MAKE) -C alpine base
-
-alpine-apache:
-	$(MAKE) -C alpine apache
-
-alpine-bind:
-	$(MAKE) -C alpine bind
-
-alpine-mail:
-	$(MAKE) -C alpine mail
-
-alpine-certbot:
-	$(MAKE) -C alpine certbot
-
-alpine-clean:
-	$(MAKE) -C alpine clean
-
-alpine-help:
-	$(MAKE) -C alpine help
-
-# Debian targets (delegate to debian/Makefile)
-debian: debian-base
-
-debian-all:
+# Main build targets
+all:
 	$(MAKE) -C debian all
 
-debian-base:
+base:
 	$(MAKE) -C debian base
 
-debian-apache:
+apache:
 	$(MAKE) -C debian apache
 
-debian-bind:
+bind:
 	$(MAKE) -C debian bind
 
-debian-mail:
+mail:
 	$(MAKE) -C debian mail
 
-debian-certbot:
+certbot:
 	$(MAKE) -C debian certbot
 
-debian-clean:
-	$(MAKE) -C debian clean
+# Volume management
+volumes:
+	$(MAKE) -C debian volumes
 
-debian-help:
-	$(MAKE) -C debian help
+# Pod management
+pod-init:
+	$(MAKE) -C debian pod-init
 
-# Pod management targets
-pod-start:
-	@echo "Starting lab-services pod..."
-	@podman play kube debian/pod.yaml
+pod-cert-cleanup:
+	$(MAKE) -C debian pod-cert-cleanup
 
-pod-stop:
-	@echo "Stopping lab-services pod..."
-	@podman pod stop lab-services || true
+pod-up:
+	$(MAKE) -C debian pod-up
 
-pod-rm: pod-stop
-	@echo "Removing lab-services pod..."
-	@podman pod rm lab-services || true
+pod-down:
+	$(MAKE) -C debian pod-down
 
 pod-status:
-	@echo "Pod status:"
-	@podman pod ps --filter name=lab-services
-	@echo ""
-	@echo "Container status:"
-	@podman ps --filter pod=lab-services
+	$(MAKE) -C debian pod-status
 
 pod-logs:
-	@echo "Showing logs for all containers in lab-services pod..."
-	@for container in $$(podman ps -q --filter pod=lab-services); do \
-		name=$$(podman inspect $$container --format '{{.Name}}'); \
-		echo "=== Logs for $$name ==="; \
-		podman logs $$container --tail 50; \
-		echo ""; \
-	done
+	$(MAKE) -C debian pod-logs
 
-# Global targets
-clean: alpine-clean debian-clean
-	@echo "All images cleaned"
+# Authentication CLI operations
+auth-cli-install:
+	@echo "Installing authentication CLI tool..."
+	@cp debian/podplay-auth /usr/local/bin/
+	@chmod +x /usr/local/bin/podplay-auth
+	@pip3 install -q click requests pyyaml
+	@echo "CLI tool installed at /usr/local/bin/podplay-auth"
+
+auth-cli-bootstrap:
+	@echo "Bootstrapping admin access..."
+	@podplay-auth bootstrap
+
+auth-cli-test:
+	@echo "Running authentication tests..."
+	@python3 debian/tests/auth/test_workflows.py
+
+auth-cli-test-quick:
+	@echo "Running quick registration test..."
+	@podplay-auth test registration-flow \
+		-u test_$$(date +%s) \
+		-e test_$$(date +%s)@lab.sethlakowske.com \
+		-p TestPass123!
+
+auth-logs-monitor:
+	@echo "Monitoring authentication logs..."
+	@podman exec -it podplay-apache tail -f /data/logs/apache/auth.log
+
+auth-logs-check:
+	@echo "Checking recent auth logs..."
+	@podman exec podplay-apache tail -20 /data/logs/apache/auth.log
+
+# Cleanup
+clean:
+	$(MAKE) -C debian clean
+
+clean-volumes:
+	$(MAKE) -C debian clean-volumes
 
 help:
 	@echo "PodPlay Container Build System"
 	@echo "============================="
 	@echo ""
-	@echo "This project supports two implementations:"
-	@echo "  - Alpine Linux (lightweight, minimal)"
-	@echo "  - Debian (full-featured, stable)"
+	@echo "Build targets:"
+	@echo "  all                - Build all containers"
+	@echo "  base               - Build base container"
+	@echo "  apache             - Build Apache container"
+	@echo "  bind               - Build DNS container"
+	@echo "  mail               - Build mail container"
+	@echo "  certbot            - Build certificate container"
 	@echo ""
-	@echo "Quick Start:"
-	@echo "  make alpine-all    - Build all Alpine containers"
-	@echo "  make debian-all    - Build all Debian containers"
+	@echo "Volume management:"
+	@echo "  volumes            - Create named volumes"
+	@echo "  clean-volumes      - Remove all volumes (WARNING: destroys data)"
 	@echo ""
-	@echo "Implementation-specific targets:"
-	@echo "  alpine-*           - Alpine Linux implementation"
-	@echo "  debian-*           - Debian implementation"
+	@echo "Pod operations:"
+	@echo "  pod-init           - Generate certificates"
+	@echo "  pod-cert-cleanup   - Remove certificate pod"
+	@echo "  pod-up             - Start services"
+	@echo "  pod-down           - Stop services"
+	@echo "  pod-status         - Check pod status"
+	@echo "  pod-logs           - View pod logs"
 	@echo ""
-	@echo "Available services: base, apache, bind, mail, certbot"
+	@echo "Authentication CLI:"
+	@echo "  auth-cli-install   - Install CLI tool locally"
+	@echo "  auth-cli-bootstrap - Bootstrap admin access"
+	@echo "  auth-cli-test      - Run authentication tests"
+	@echo "  auth-cli-test-quick - Run quick registration test"
+	@echo "  auth-logs-monitor  - Monitor auth logs in real-time"
+	@echo "  auth-logs-check    - Check recent auth logs"
 	@echo ""
-	@echo "For detailed help on each implementation:"
-	@echo "  make alpine-help   - Show Alpine-specific targets"
-	@echo "  make debian-help   - Show Debian-specific targets"
-	@echo ""
-	@echo "Backward compatibility (defaults to Alpine):"
-	@echo "  make build-all     - Same as alpine-all"
-	@echo "  make build-*       - Same as alpine-*"
-	@echo ""
-	@echo "Pod management:"
-	@echo "  pod-start          - Start the lab-services pod"
-	@echo "  pod-stop           - Stop the lab-services pod"
-	@echo "  pod-rm             - Remove the lab-services pod"
-	@echo "  pod-status         - Show pod and container status"
-	@echo "  pod-logs           - Show logs from all containers"
-	@echo ""
-	@echo "Global targets:"
-	@echo "  clean              - Remove all images (Alpine and Debian)"
+	@echo "Cleanup:"
+	@echo "  clean              - Remove all images"
 	@echo "  help               - Show this help message"

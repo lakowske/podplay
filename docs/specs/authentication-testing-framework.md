@@ -1,312 +1,239 @@
 # Authentication Testing Framework Specification
 
 ## Purpose
-Define a comprehensive programmatic testing framework for the PodPlay authentication system that validates functionality without requiring browser automation, using HTTP requests and Python scripting to test login, registration, password reset, and session management workflows.
+Define a simple, maintainable testing approach for the PodPlay authentication system that validates core workflows using basic HTTP requests without browser automation or complex frameworks.
 
 ## Scope
-- Programmatic testing of all authentication endpoints
-- Session management and CSRF protection validation
-- Email workflow simulation and verification
-- Rate limiting and security feature testing
-- Integration with existing container infrastructure
-- Automated test execution and reporting
+- Core authentication workflow testing (registration, login, password reset)
+- Email confirmation simulation
+- Basic CSRF token validation
+- Portal access verification
+- Simple pass/fail reporting
 
-## Requirements
+## Design Principles
+1. **Simplicity First**: Start with the minimum viable testing
+2. **Clear and Readable**: Tests should be self-documenting
+3. **Fast Execution**: Complete all tests in under 10 seconds
+4. **Easy Debugging**: Clear error messages when tests fail
+5. **Incremental Enhancement**: Build complexity only when needed
 
-### Functional Requirements
-1. **Authentication Workflow Testing**: Test complete user registration, login, and password reset flows
-2. **Session Management Testing**: Validate session creation, persistence, expiration, and logout
-3. **Security Feature Testing**: Verify CSRF protection, rate limiting, and input validation
-4. **Email Workflow Testing**: Simulate and verify email confirmation and reset workflows
-5. **Portal Protection Testing**: Validate access control for protected areas
-6. **Error Handling Testing**: Test system behavior with invalid inputs and edge cases
-7. **Integration Testing**: Verify authentication system works with existing user management
-8. **Performance Testing**: Measure response times and system behavior under load
+## Architecture
 
-### Non-Functional Requirements
-1. **Execution Speed**: Complete test suite runs in < 30 seconds
-2. **Reliability**: Tests are deterministic and produce consistent results
-3. **Maintainability**: Clear test structure with reusable components
-4. **Isolation**: Tests don't interfere with production data or other tests
-5. **Reporting**: Clear pass/fail status with detailed error information
-6. **CI/CD Integration**: Can be executed automatically in deployment pipelines
-
-## Architecture Design
-
-### Test Framework Components
-
+### Simple Component Design
 ```mermaid
-flowchart TD
-    A[Test Runner] --> B[HTTP Client]
-    A --> C[Test Data Manager]
-    A --> D[Session Manager]
+flowchart LR
+    A[Test Script] --> B[HTTP Client]
+    B --> C[Auth Endpoints]
+    A --> D[Email Token Reader]
+    D --> E[Container Files]
     
-    B --> E[Authentication Endpoints]
-    C --> F[Mock User Database]
-    C --> G[Temporary Files]
-    D --> H[Cookie Jar]
-    D --> I[CSRF Tokens]
-    
-    E --> J[Apache Container]
-    F --> K[Test Fixtures]
-    G --> L[Cleanup Handler]
-    
-    subgraph Testing Infrastructure
+    subgraph Test Components
         A
         B
-        C
         D
     end
     
-    subgraph Test Environment
+    subgraph PodPlay System
+        C
         E
-        J
-        direction TB
-    end
-    
-    subgraph Data Management
-        F
-        G
-        K
-        L
-        direction TB
     end
 ```
 
 ### Core Components
 
-#### 1. HTTP Client (`auth_client.py`)
-- **Purpose**: Handle HTTP requests with session persistence
-- **Features**: Cookie management, CSRF token handling, SSL verification
-- **Dependencies**: `requests` library with persistent session
+#### 1. Simple Test Script (`simple_auth_test.py`)
+- Single Python file (~150 lines)
+- No testing framework dependencies
+- Clear test functions for each workflow
+- Simple pass/fail reporting
 
-#### 2. Test Data Manager (`test_data.py`)
-- **Purpose**: Generate and manage test user data
-- **Features**: Mock users, email addresses, temporary passwords
-- **Cleanup**: Automatic removal of test artifacts
+#### 2. Basic HTTP Client (`auth_client.py`)
+- Minimal wrapper around requests library
+- Session management for cookies
+- CSRF token handling
+- No complex error handling or retries
 
-#### 3. Email Workflow Simulator (`email_simulator.py`)
-- **Purpose**: Test email-dependent workflows without SMTP
-- **Features**: Token extraction, confirmation simulation
-- **Integration**: Direct file system access to pending registrations
+#### 3. Configuration (`test_config.py`)
+- Simple Python file with constants
+- No YAML parsing needed
+- Basic settings only
 
-#### 4. Authentication Test Suite (`auth_tests.py`)
-- **Purpose**: Comprehensive test scenarios
-- **Coverage**: All authentication endpoints and workflows
-- **Reporting**: Detailed test results and error information
+## Test Workflows
 
-## Test Scenarios
-
-### 1. CSRF Protection Testing
+### 1. User Registration Flow
 ```python
-def test_csrf_token_generation():
-    """Verify CSRF tokens are generated correctly"""
-    
-def test_csrf_token_validation():
-    """Verify forms reject invalid CSRF tokens"""
-    
-def test_csrf_token_expiration():
-    """Verify expired tokens are rejected"""
+def test_registration_flow():
+    """Test complete registration workflow"""
+    # Step 1: Register new user
+    # Step 2: Get email confirmation token
+    # Step 3: Confirm registration
+    # Step 4: Verify user can login
 ```
 
-### 2. User Registration Flow
+### 2. Password Reset Flow
 ```python
-def test_valid_registration():
-    """Complete registration with valid data"""
-    
-def test_registration_validation():
-    """Test input validation (email format, password strength)"""
-    
-def test_duplicate_email_prevention():
-    """Verify duplicate emails are rejected"""
-    
-def test_email_confirmation():
-    """Simulate email confirmation workflow"""
+def test_password_reset_flow():
+    """Test password reset workflow"""
+    # Step 1: Create and confirm user
+    # Step 2: Request password reset
+    # Step 3: Get reset token
+    # Step 4: Complete password reset
+    # Step 5: Login with new password
 ```
 
-### 3. Login and Session Management
+### 3. Portal Protection
 ```python
-def test_valid_login():
-    """Login with correct credentials"""
-    
-def test_invalid_credentials():
-    """Test various invalid credential scenarios"""
-    
-def test_session_persistence():
-    """Verify session cookies work across requests"""
-    
-def test_session_expiration():
-    """Test automatic session expiration"""
+def test_portal_protection():
+    """Test portal access control"""
+    # Step 1: Try accessing portal without auth (should redirect)
+    # Step 2: Login with valid user
+    # Step 3: Access portal (should succeed)
 ```
 
-### 4. Portal Protection
-```python
-def test_protected_area_access():
-    """Verify portal requires authentication"""
-    
-def test_authenticated_portal_access():
-    """Verify authenticated users can access portal"""
-    
-def test_session_redirect():
-    """Test redirect to original URL after login"""
-```
+## Implementation
 
-### 5. Password Reset Flow
-```python
-def test_password_reset_request():
-    """Request password reset for valid email"""
-    
-def test_password_reset_completion():
-    """Complete password reset with valid token"""
-    
-def test_reset_token_expiration():
-    """Verify reset tokens expire appropriately"""
-```
-
-### 6. Rate Limiting and Security
-```python
-def test_login_rate_limiting():
-    """Verify rate limiting prevents brute force"""
-    
-def test_registration_rate_limiting():
-    """Test registration attempt limits"""
-    
-def test_security_headers():
-    """Verify security headers are set correctly"""
-```
-
-## Implementation Plan
-
-### Directory Structure
+### Directory Structure (Simplified)
 ```
 /debian/tests/auth/
-├── auth_client.py          # HTTP client with session management
-├── test_data.py            # Test data generation and management
-├── email_simulator.py      # Email workflow simulation
-├── auth_tests.py           # Main test suite
-├── fixtures/               # Test data files
-│   ├── test_users.yaml
-│   └── mock_emails.yaml
-├── utils/                  # Utility functions
-│   ├── cleanup.py          # Test artifact cleanup
-│   └── helpers.py          # Common test helpers
-└── reports/                # Test execution reports
+├── simple_auth_test.py     # Main test script
+├── auth_client.py          # Basic HTTP client
+├── test_config.py          # Simple configuration
+└── reports/                # Test output
     └── .gitkeep
 ```
 
-### Test Execution Integration
+### Test Execution
+```bash
+# Run all tests
+make test-auth
 
-#### Make Targets
+# Output example:
+Running authentication tests...
+✓ Registration flow: PASSED
+✓ Password reset flow: PASSED  
+✓ Portal protection: PASSED
+All tests passed! (7.2 seconds)
+```
+
+### Make Targets
 ```makefile
 # Run authentication tests
 test-auth:
-	cd debian/tests/auth && python3 auth_tests.py
-
-# Run specific test category
-test-auth-login:
-	cd debian/tests/auth && python3 auth_tests.py --category=login
-
-# Run tests with verbose output
-test-auth-verbose:
-	cd debian/tests/auth && python3 auth_tests.py --verbose
+    cd debian/tests/auth && python3 simple_auth_test.py
 
 # Clean test artifacts
 test-auth-clean:
-	cd debian/tests/auth && python3 utils/cleanup.py
+    rm -f debian/tests/auth/reports/*.txt
 ```
 
-#### Test Environment Setup
-```bash
-# Ensure containers are running
-make pod-status || make pod-up
+## Example Test Implementation
 
-# Wait for services to be ready
-./tests/auth/utils/wait_for_services.py
-
-# Run test suite
-make test-auth
-```
-
-### CI/CD Integration
-
-#### Automated Testing Workflow
-1. **Pre-deployment**: Run tests against existing deployment
-2. **Post-deployment**: Verify new deployment functionality
-3. **Quality Gates**: Fail deployment if authentication tests fail
-4. **Reporting**: Generate test reports and metrics
-
-#### Test Environment Configuration
-```yaml
-# test-config.yaml
-test_environment:
-  base_url: "https://localhost:8443"
-  ssl_verify: false
-  timeout: 30
-  
-test_data:
-  user_count: 10
-  cleanup_after: true
-  
-reporting:
-  format: "junit"
-  output_dir: "./reports"
-```
-
-## Security Considerations
-
-### Test Data Security
-- **No Real Emails**: Use mock email addresses for testing
-- **Temporary Data**: All test data is automatically cleaned up
-- **Isolation**: Tests use separate data volumes where possible
-
-### Container Security
-- **Read-Only Access**: Tests should not modify production data
-- **Network Isolation**: Test traffic isolated from production
-- **Credential Management**: No real credentials in test code
-
-## Performance Testing
-
-### Load Testing Scenarios
 ```python
-def test_concurrent_logins():
-    """Test system behavior with multiple simultaneous logins"""
+#!/usr/bin/env python3
+"""Simple authentication testing for PodPlay"""
+
+import sys
+import time
+from auth_client import SimpleAuthClient
+import test_config as config
+
+def test_registration_flow():
+    """Test user registration and confirmation"""
+    client = SimpleAuthClient(config.BASE_URL)
     
-def test_registration_load():
-    """Test registration system under load"""
+    # Generate unique test user
+    timestamp = int(time.time())
+    username = f"testuser{timestamp}"
+    email = f"test{timestamp}@test.local"
+    password = "TestPass123!"
     
-def test_session_scaling():
-    """Verify session management scales appropriately"""
+    # Register user
+    success = client.register(username, email, password)
+    if not success:
+        return False, "Registration failed"
+    
+    # Get confirmation token
+    token = get_email_token(email, "registration")
+    if not token:
+        return False, "No confirmation token found"
+    
+    # Confirm registration
+    success = client.confirm_registration(token)
+    if not success:
+        return False, "Confirmation failed"
+    
+    # Test login
+    success = client.login(username, password)
+    if not success:
+        return False, "Login failed after confirmation"
+    
+    return True, "Registration flow completed"
+
+def run_tests():
+    """Run all tests and report results"""
+    tests = [
+        ("Registration flow", test_registration_flow),
+        ("Password reset flow", test_password_reset_flow),
+        ("Portal protection", test_portal_protection)
+    ]
+    
+    print("Running authentication tests...")
+    passed = 0
+    failed = 0
+    
+    for test_name, test_func in tests:
+        success, message = test_func()
+        if success:
+            print(f"✓ {test_name}: PASSED")
+            passed += 1
+        else:
+            print(f"✗ {test_name}: FAILED - {message}")
+            failed += 1
+    
+    print(f"\nTests: {passed} passed, {failed} failed")
+    return failed == 0
+
+if __name__ == "__main__":
+    success = run_tests()
+    sys.exit(0 if success else 1)
 ```
 
-### Performance Metrics
-- **Response Time**: < 100ms for authentication checks
-- **Throughput**: Handle 100+ concurrent authentication requests
-- **Resource Usage**: Monitor memory and CPU during tests
+## Email Token Simulation
 
-## Reporting and Monitoring
-
-### Test Reports
-- **JUnit XML**: For CI/CD integration
-- **HTML Reports**: Human-readable test results
-- **Performance Metrics**: Response times and throughput data
-
-### Continuous Monitoring
-- **Test Trend Analysis**: Track test success rates over time
-- **Performance Regression**: Alert on performance degradation
-- **Security Alerts**: Monitor for authentication vulnerabilities
+Simple approach to get email tokens without SMTP:
+```python
+def get_email_token(email, token_type):
+    """Get token from container filesystem"""
+    import subprocess
+    
+    # List files in pending directory
+    cmd = f"podman exec {config.CONTAINER_NAME} ls /data/user-data/pending/{token_type}s/"
+    result = subprocess.run(cmd.split(), capture_output=True, text=True)
+    
+    # Find token file for email
+    for filename in result.stdout.split():
+        if filename.endswith('.yaml'):
+            # Read file and check if it's for our email
+            cmd = f"podman exec {config.CONTAINER_NAME} cat /data/user-data/pending/{token_type}s/{filename}"
+            content = subprocess.run(cmd.split(), capture_output=True, text=True).stdout
+            if email in content:
+                return filename.replace('.yaml', '')
+    
+    return None
+```
 
 ## Future Enhancements
 
-### Browser Testing Integration
-- **Selenium Framework**: For complex UI interactions
-- **Visual Regression**: Screenshot comparison testing
-- **Accessibility Testing**: Automated accessibility validation
+Once basic testing is proven and stable, consider adding:
 
-### Extended Security Testing
-- **Penetration Testing**: Automated security vulnerability scanning
-- **OWASP Integration**: Security testing against OWASP guidelines
-- **Compliance Testing**: Verify against security compliance requirements
+1. **Error Case Testing**: Invalid inputs, wrong passwords
+2. **Concurrent User Testing**: Multiple users at once
+3. **Performance Metrics**: Response time tracking
+4. **CI/CD Integration**: Automated test runs
+5. **Test Data Management**: Cleanup old test users
+
+But only add these when there's a clear need and the basic tests are working reliably.
 
 ## Conclusion
 
-This authentication testing framework provides comprehensive validation of the PodPlay authentication system through programmatic testing. By focusing on HTTP-based testing rather than browser automation, we achieve fast, reliable, and maintainable tests that can be easily integrated into CI/CD pipelines while thoroughly validating all security and functionality requirements.
+This simplified testing framework provides essential validation of PodPlay's authentication system while remaining easy to understand, maintain, and debug. By focusing on core workflows and avoiding framework complexity, we create a solid foundation that can grow with the project's needs.

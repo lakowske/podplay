@@ -38,9 +38,6 @@ podplay/
 │   ├── Dockerfile.bind
 │   ├── Dockerfile.mail
 │   └── Dockerfile.certbot
-├── alpine/
-│   ├── Makefile
-│   └── ...
 ├── src/
 │   └── cert_manager.py
 ├── requirements.txt
@@ -50,19 +47,15 @@ podplay/
 ### Makefile Hierarchy
 ```makefile
 # Root Makefile
-.PHONY: all debian alpine clean help
+.PHONY: all debian clean help
 
-all: debian alpine
+all: debian
 
 debian:
 	$(MAKE) -C debian all
 
-alpine:
-	$(MAKE) -C alpine all
-
 clean:
 	$(MAKE) -C debian clean
-	$(MAKE) -C alpine clean
 ```
 
 ## Image Naming Conventions
@@ -78,8 +71,6 @@ podplay-<service>-<distribution>:<version>
 base-debian:latest
 podplay-apache-debian:latest
 podplay-apache-debian:v1.0.0
-podplay-mail-alpine:latest
-podplay-mail-alpine:v1.0.0
 ```
 
 ### Image Registry
@@ -183,7 +174,6 @@ LICENSE
 !src/
 !requirements.txt
 !debian/
-!alpine/
 ```
 
 ### Multi-Stage Build Pattern
@@ -243,7 +233,7 @@ jobs:
 
     strategy:
       matrix:
-        distro: [debian, alpine]
+        distro: [debian]
         service: [apache, bind, mail, certbot]
 
     steps:

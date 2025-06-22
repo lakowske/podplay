@@ -300,7 +300,8 @@ class MailUserReloadStrategy(UserReloadStrategy):
             for domain_config in self.user_config['domains']:
                 domain_name = domain_config['name']
                 for user in domain_config['users']:
-                    if user.get('enabled', True) and 'mail' in user.get('services', ['mail']):
+                    if (user.get('enabled', True) and 
+                        'mail' in user.get('services', ['mail'])):
                         username = user['username']
                         if '@' not in username:
                             email = f"{username}@{domain_name}"
@@ -334,7 +335,8 @@ class MailUserReloadStrategy(UserReloadStrategy):
             for domain_config in self.user_config['domains']:
                 domain_name = domain_config['name']
                 for user in domain_config['users']:
-                    if user.get('enabled', True) and user.get('aliases'):
+                    if (user.get('enabled', True) and 
+                        user.get('aliases')):
                         username = user['username']
                         if '@' not in username:
                             target_email = f"{username}@{domain_name}"
@@ -358,7 +360,8 @@ class MailUserReloadStrategy(UserReloadStrategy):
             for domain_config in self.user_config['domains']:
                 domain_name = domain_config['name']
                 for user in domain_config['users']:
-                    if user.get('enabled', True) and 'mail' in user.get('services', ['mail']):
+                    if (user.get('enabled', True) and 
+                        'mail' in user.get('services', ['mail'])):
                         username = user['username']
                         password = user['password']
                         
@@ -683,8 +686,18 @@ def list_users(domain=None):
                         quota = user.get('quota', 'N/A')
                         services = ', '.join(user.get('services', ['mail']))
                         enabled = user.get('enabled', True)
-                        status = "enabled" if enabled else "disabled"
-                        print(f"  {email} (quota: {quota}, services: {services}, {status})")
+                        email_confirmed = user.get('email_confirmed', False)
+                        status = []
+                        if not enabled:
+                            status.append("disabled")
+                        else:
+                            status.append("enabled")
+                        if not email_confirmed:
+                            status.append("email unconfirmed")
+                        else:
+                            status.append("email confirmed")
+                        status_str = ", ".join(status)
+                        print(f"  {email} (quota: {quota}, services: {services}, {status_str})")
         
     except Exception as e:
         print(f"Error listing users: {e}")

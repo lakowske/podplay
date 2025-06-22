@@ -1,6 +1,7 @@
 .PHONY: all base apache bind mail certbot clean help volumes clean-volumes test-logging run-examples
 .PHONY: pod-init pod-up pod-down pod-status pod-logs pod-renewal pod-cert-cleanup
 .PHONY: user-add user-remove user-list user-test user-reload
+.PHONY: test-auth test-auth-clean
 
 # Debian-specific targets
 all: apache bind mail certbot
@@ -80,10 +81,10 @@ test-logging: volumes
 	@podman logs apache-test --tail 5 || true
 	@echo ""
 	@echo "Persistent log files:"
-	@podman run --rm -v logs:/data/logs alpine:latest ls -la /data/logs/apache/ || true
+	@podman run --rm -v logs:/data/logs debian:12-slim ls -la /data/logs/apache/ || true
 	@echo ""
 	@echo "Access log sample:"
-	@podman run --rm -v logs:/data/logs alpine:latest tail -3 /data/logs/apache/access.log || true
+	@podman run --rm -v logs:/data/logs debian:12-slim tail -3 /data/logs/apache/access.log || true
 	@echo ""
 	@echo "Cleaning up..."
 	@podman stop apache-test || true
@@ -245,6 +246,14 @@ user-reload:
 		touch /data/user-data/config/users.yaml || \
 		echo "Error: No running mail container found. Use 'make pod-up' first."
 
+# Simple authentication testing
+test-auth:
+	@cd tests/auth && python3 simple_auth_test.py
+
+test-auth-clean:
+	@echo "🧹 Cleaning authentication test reports..."
+	@rm -f tests/auth/reports/*.txt tests/auth/reports/*.log 2>/dev/null || true
+
 help:
 	@echo "Debian Implementation Targets:"
 	@echo ""
@@ -275,6 +284,8 @@ help:
 	@echo ""
 	@echo "Testing:"
 	@echo "  test-logging - Test dual logging functionality"
+	@echo "  test-auth    - Run authentication tests"
+	@echo "  test-auth-clean - Clean up test artifacts"
 	@echo "  run-examples - Show example run commands"
 	@echo ""
 	@echo "User Management:"

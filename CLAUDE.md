@@ -77,7 +77,77 @@ make pod-logs         # View logs
 make pod-down         # Stop services
 ```
 
+## Troubleshooting and Logging
+
+### Dual Logging Architecture
+PodPlay uses a **dual logging approach** as detailed in `docs/specs/logging-architecture.md`:
+
+1. **Container Runtime Logs** (stdout/stderr): Use `podman logs <container-name>`
+2. **Persistent File Logs**: Stored in `/data/logs` volume for long-term analysis
+
+### When Troubleshooting Mail or User Creation Issues:
+
+**Always check BOTH log sources:**
+
+```bash
+# 1. Check container runtime logs first
+podman logs podplay-mail --tail 20
+podman logs podplay-apache --tail 20
+
+# 2. Check persistent logs for detailed service information
+podman exec podplay-mail ls -la /data/logs/mail/
+podman exec podplay-mail tail -20 /data/logs/mail/postfix.log
+podman exec podplay-mail tail -20 /data/logs/mail/auth.log
+
+# 3. Check user management logs
+podman exec podplay-mail tail -20 /data/logs/mail/user-manager.log
+```
+
+**Log Structure:**
+```
+/data/logs/
+├── apache/          # Web server logs
+│   ├── access.log   # HTTP requests
+│   ├── error.log    # Apache errors
+│   └── auth.log     # Authentication events
+├── mail/            # Mail server logs  
+│   ├── postfix.log  # SMTP operations
+│   ├── dovecot.log  # IMAP/POP3 operations
+│   └── auth.log     # Mail authentication
+└── bind/            # DNS server logs
+    └── general.log
+```
+
+**Key Points:**
+- Container logs show immediate issues and startup problems
+- Persistent logs provide detailed operational information
+- Authentication and user creation issues often span multiple log files
+- Always check both Apache and Mail logs for authentication workflows
+
 ## Implementation Guidelines
+
+### CRITICAL: Always Rebuild Images Instead of Live File Copying
+
+**Important Development Practice:**
+- **ALWAYS** rebuild container images after making code changes
+- **NEVER** copy modified files directly to running containers for testing
+- Live file copying creates inconsistency between the built image and running container
+- This leads to confusion about which version of code is actually deployed
+
+**Correct Workflow:**
+```bash
+# After making code changes:
+make clean           # Remove old images
+make all             # Build new images with updated code
+make pod-down        # Stop current pod
+make pod-up          # Start with new images
+```
+
+**Why This Matters:**
+- Ensures development environment matches production deployment
+- Prevents issues where "working" code in containers doesn't persist after restart
+- Maintains consistency between image builds and running services
+- Avoids the problem of having multiple versions of files (e.g., `script.py` vs `script-working.py`)
 
 ### CRITICAL: Always Review Existing Architecture Before Implementation
 
@@ -106,7 +176,7 @@ Before implementing any technical specification:
    - [ ] Does this need configuration? Extend existing entrypoint scripts
 
 4. **File Organization**
-   - Place new files in the appropriate implementation directory (`alpine/` or `debian/`)
+   - Place new files in the implementation directory (`debian/`)
    - Follow existing naming conventions (e.g., `service-entrypoint.sh`)
    - Group related files logically within the implementation directory
    - Avoid creating parallel directory structures

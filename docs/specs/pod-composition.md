@@ -259,7 +259,7 @@ The recommended approach uses explicit Make targets for each deployment step:
 
 ```bash
 # Navigate to implementation directory
-cd debian  # or cd alpine
+cd debian
 
 # 1. Build all container images
 make all
@@ -524,7 +524,7 @@ podman exec -it podplay-apache /bin/bash
 
 # Check volume contents
 podman volume inspect podplay-certs
-podman run --rm -v podplay-certs:/data:ro alpine ls -la /data
+podman run --rm -v podplay-certs:/data:ro debian:12-slim ls -la /data
 ```
 
 ## Security Considerations

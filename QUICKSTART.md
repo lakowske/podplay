@@ -2,15 +2,15 @@
 
 ## Overview
 
-PodPlay provides a complete hosting stack with Apache, BIND DNS, Mail (Postfix/Dovecot), and automated certificate management. It supports both Alpine (lightweight) and Debian (full-featured) implementations.
+PodPlay provides a complete hosting stack with Apache, BIND DNS, Mail (Postfix/Dovecot), and automated certificate management using Debian containers.
 
 ## Quick Deployment (Recommended)
 
 Deploy PodPlay using the step-by-step pod workflow:
 
 ```bash
-# Navigate to your preferred implementation
-cd debian  # or cd alpine
+# Navigate to the project
+cd debian
 
 # 1. Build all images
 make all
@@ -30,14 +30,11 @@ make pod-up
 
 ## Manual Deployment
 
-### 1. Choose Your Implementation
+### 1. Navigate to Project
 
 ```bash
-# For Debian (recommended for production)
+# Navigate to the project directory
 cd debian
-
-# For Alpine (lightweight alternative)  
-cd alpine
 ```
 
 ### 2. Build Images
@@ -178,13 +175,13 @@ podman logs podplay-bind
 podman logs podplay-mail
 
 # Persistent logs
-podman run --rm -v logs:/logs alpine cat /logs/apache/access.log
+podman run --rm -v logs:/logs debian:12-slim cat /logs/apache/access.log
 ```
 
 ### Certificate Issues
 ```bash
 # Check certificates
-podman run --rm -v certs:/certs alpine ls -la /certs/
+podman run --rm -v certs:/certs debian:12-slim ls -la /certs/
 
 # Regenerate certificates
 make pod-down
