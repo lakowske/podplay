@@ -91,13 +91,20 @@ def list_users(domain=None):
 
 def create_user(username, email, password, quota='500M'):
     """Create a new user."""
+    # Parse email to get domain
+    if '@' in email:
+        _, domain = email.split('@', 1)
+    else:
+        return False
+    
     # Use user_manager.py
     cmd = [
+        "/data/.venv/bin/python",
         "/data/src/user_manager.py",
         "--add-user",
         "--user", username,
-        "--email", email,
         "--password", password,
+        "--domain", domain,
         "--quota", quota
     ]
     
@@ -110,10 +117,18 @@ def create_user(username, email, password, quota='500M'):
 
 def delete_user(email):
     """Delete a user."""
+    # Parse email to get username and domain
+    if '@' in email:
+        username, domain = email.split('@', 1)
+    else:
+        return False
+    
     cmd = [
+        "/data/.venv/bin/python",
         "/data/src/user_manager.py",
         "--remove-user",
-        "--email", email
+        "--user", username,
+        "--domain", domain
     ]
     
     try:

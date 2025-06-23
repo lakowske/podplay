@@ -618,6 +618,93 @@ def create_user(ctx, username, email, password, quota):
         click.echo("Failed to create user", err=True)
         ctx.exit(1)
 
+@users.command('delete')
+@click.option('--email', '-e', required=True, help='Email address to delete')
+@click.option('--confirm', is_flag=True, help='Skip confirmation prompt')
+@click.pass_context
+def delete_user(ctx, email, confirm):
+    """Delete a user (admin only)"""
+    client = ctx.obj['client']
+    logs = ctx.obj['logs']
+    user_mgr = UserManager(client)
+    
+    # Confirmation prompt unless --confirm flag is used
+    if not confirm:
+        if not click.confirm(f"Are you sure you want to delete user {email}?"):
+            click.echo("Deletion cancelled")
+            return
+    
+    # Mark log position
+    logs.mark_position()
+    
+    if user_mgr.delete_user(email):
+        click.echo(f"✓ User deleted: {email}")
+        
+        # Verify log entry
+        if logs.verify_entry(f"USER_DELETED] User: {email}"):
+            click.echo("✓ Deletion logged")
+        else:
+            click.echo("⚠ Deletion log entry not found", err=True)
+    else:
+        click.echo(f"✗ Failed to delete user: {email}", err=True)
+        ctx.exit(1)
+
+@users.command('cleanup')
+@click.option('--keep', '-k', multiple=True, help='Email addresses to keep (can be specified multiple times)')
+@click.option('--dry-run', is_flag=True, help='Show what would be deleted without actually deleting')
+@click.option('--confirm', is_flag=True, help='Skip confirmation prompt')
+@click.pass_context
+def cleanup_users(ctx, keep, dry_run, confirm):
+    """Delete all users except specified ones (admin only)"""
+    client = ctx.obj['client']
+    user_mgr = UserManager(client)
+    
+    # Get all users
+    all_users = user_mgr.list_users()
+    if not all_users:
+        click.echo("No users found or not authorized")
+        return
+    
+    # Default users to keep if none specified
+    if not keep:
+        keep = ['admin@lab.sethlakowske.com', 'seth@lab.sethlakowske.com']
+    
+    # Find users to delete
+    users_to_delete = [user['email'] for user in all_users if user['email'] not in keep]
+    
+    if not users_to_delete:
+        click.echo("No users to delete")
+        return
+    
+    click.echo(f"Users to keep: {', '.join(keep)}")
+    click.echo(f"Users to delete ({len(users_to_delete)}):")
+    for email in users_to_delete:
+        click.echo(f"  - {email}")
+    
+    if dry_run:
+        click.echo("\n[DRY RUN] No users were actually deleted")
+        return
+    
+    # Confirmation prompt unless --confirm flag is used
+    if not confirm:
+        if not click.confirm(f"\nAre you sure you want to delete {len(users_to_delete)} users?"):
+            click.echo("Cleanup cancelled")
+            return
+    
+    # Delete users
+    deleted_count = 0
+    failed_count = 0
+    
+    for email in users_to_delete:
+        if user_mgr.delete_user(email):
+            click.echo(f"✓ Deleted: {email}")
+            deleted_count += 1
+        else:
+            click.echo(f"✗ Failed to delete: {email}")
+            failed_count += 1
+    
+    click.echo(f"\nCleanup complete: {deleted_count} deleted, {failed_count} failed")
+
 @users.command('email')
 @click.option('--to', '-t', required=True, help='Recipient email address')
 @click.option('--subject', '-s', required=True, help='Email subject')

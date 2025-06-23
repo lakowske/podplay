@@ -148,16 +148,19 @@ setup_user_management
 
 # Generate initial user configuration files
 echo "[$(date -Iseconds)] [INFO] [MAIL] [USER-MANAGER]: Generating initial service configuration files..."
+
+# Use debug logging if requested
+if [ "${PODPLAY_LOG_LEVEL}" = "DEBUG" ] || [ "${PODPLAY_MAIL_LOG_LEVEL}" = "DEBUG" ]; then
+    export PODPLAY_USER_LOG_LEVEL=DEBUG
+fi
+
+# Generate initial configurations
 /data/.venv/bin/python /data/src/user_manager.py \
-    --hot-reload \
-    --watch /data/user-data/config/ \
+    --generate-initial \
+    --watch /data/user-data/config/users.yaml \
     --service-type mail \
     --domain "$MAIL_DOMAIN" \
-    > /tmp/user-config-init.log 2>&1 &
-
-INIT_PID=$!
-sleep 3  # Allow initial configuration generation
-kill $INIT_PID 2>/dev/null || true
+    2>&1 | tee /tmp/user-config-init.log
 
 # Verify configuration files were created
 if [ ! -f /etc/postfix/vmailbox ] || [ ! -f /etc/dovecot/passwd ]; then

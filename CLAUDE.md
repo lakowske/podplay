@@ -52,6 +52,46 @@ make clean-volumes
 podman volume rm logs user-data  # Keep certs volume intact
 ```
 
+## Common Deployment States
+
+### Typical Scenarios
+When bringing up the PodPlay pod, you'll usually be in one of these states:
+
+1. **Existing Deployment with Data** (Most Common)
+   - Volumes already exist with certificates and user data
+   - Just need to rebuild images and restart services
+   ```bash
+   make clean && make all     # Rebuild images only
+   make pod-down && make pod-up  # Restart with existing volumes
+   ```
+
+2. **Fresh Installation** (Rare)
+   - No existing volumes or certificates
+   - Need full initialization workflow
+   ```bash
+   make all              # Build images
+   make volumes          # Create all volumes
+   make pod-init         # Generate certificates
+   make pod-cert-cleanup # Clean up cert pod
+   make pod-up           # Start services
+   ```
+
+3. **Partial Reset** (Occasional)
+   - Keep certificates but reset other data
+   - Useful for testing or troubleshooting
+   ```bash
+   podman volume rm logs user-data  # Remove specific volumes
+   make volumes                     # Recreate removed volumes
+   make pod-up                      # Start with mixed state
+   ```
+
+### Quick State Check
+To determine your current state:
+```bash
+podman volume ls | grep -E "certs|logs|user-data"  # Check existing volumes
+podman pod ps -a | grep podplay                    # Check pod status
+```
+
 ## Service Operations
 
 ### Quick Reference

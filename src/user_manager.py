@@ -7,12 +7,23 @@ import subprocess
 import shutil
 import socket
 import crypt
+import logging
+import sys
 from pathlib import Path
 from datetime import datetime
 
 import yaml
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+
+# Configure logging based on environment
+LOG_LEVEL = os.environ.get('PODPLAY_USER_LOG_LEVEL', os.environ.get('PODPLAY_LOG_LEVEL', 'INFO'))
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL.upper()),
+    format='[%(asctime)s] [%(levelname)s] [USER-MANAGER] %(message)s',
+    datefmt='%Y-%m-%dT%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 def parse_quota(quota_str):
     """Parse quota string (e.g., '100M', '1G') to bytes."""
@@ -88,13 +99,15 @@ class UserReloadStrategy:
     
     def log_info(self, message):
         """Log info message with timestamp."""
-        timestamp = datetime.now().isoformat()
-        print(f"[{timestamp}] [INFO] [USER-RELOAD]: {message}")
+        logger.info(f"[USER-RELOAD]: {message}")
     
     def log_error(self, message):
         """Log error message with timestamp."""
-        timestamp = datetime.now().isoformat()
-        print(f"[{timestamp}] [ERROR] [USER-RELOAD]: {message}")
+        logger.error(f"[USER-RELOAD]: {message}")
+    
+    def log_debug(self, message):
+        """Log debug message with timestamp."""
+        logger.debug(f"[USER-RELOAD]: {message}")
     
     def validate_user_config(self, config_path):
         """Validate user configuration format and content."""
@@ -135,9 +148,48 @@ class UserReloadStrategy:
 class MailUserReloadStrategy(UserReloadStrategy):
     """Mail service user configuration reload implementation."""
     
+    def generate_initial(self, config_path):
+        """Generate initial configuration files without reloading services."""
+        try:
+            self.log_info("Generating initial mail service configuration files")
+            self.log_debug(f"Using config: {config_path}")
+            
+            # Load and parse user configuration
+            if not self.load_user_config(config_path):
+                return False
+            
+            # Create user directories
+            if not self.create_user_directories():
+                return False
+            
+            # Generate service configuration files
+            if not self.generate_service_configs():
+                return False
+            
+            # Build Postfix maps
+            self.log_debug("Building Postfix maps")
+            try:
+                subprocess.run(['postmap', '/etc/postfix/vmailbox'], check=True, timeout=30)
+                subprocess.run(['postmap', '/etc/postfix/valias'], check=True, timeout=30)
+                self.log_info("Postfix maps built successfully")
+            except subprocess.CalledProcessError as e:
+                self.log_error(f"Failed to build Postfix maps: {e}")
+                return False
+            
+            self.log_info("Initial configuration files generated successfully")
+            return True
+            
+        except Exception as e:
+            self.log_error(f"Initial configuration generation failed: {e}")
+            import traceback
+            self.log_debug(f"Traceback: {traceback.format_exc()}")
+            return False
+    
     def execute(self, config_path):
         """Execute mail service user configuration reload."""
         try:
+            self.log_debug(f"Starting mail service configuration with config: {config_path}")
+            
             # Load and parse user configuration
             if not self.load_user_config(config_path):
                 return False
@@ -151,27 +203,33 @@ class MailUserReloadStrategy(UserReloadStrategy):
                 return False
             
             self.log_info("Reloading Postfix configuration...")
+            self.log_debug("Running: postmap /etc/postfix/vmailbox")
             
             # Rebuild Postfix maps
             subprocess.run(['postmap', '/etc/postfix/vmailbox'], check=True, timeout=30)
+            self.log_debug("Running: postmap /etc/postfix/valias")
             subprocess.run(['postmap', '/etc/postfix/valias'], check=True, timeout=30)
             
             # Reload Postfix
+            self.log_debug("Running: postfix reload")
             postfix_result = subprocess.run(['postfix', 'reload'],
                                           capture_output=True, text=True, timeout=30)
             
             if postfix_result.returncode != 0:
                 self.log_error(f"Postfix reload failed: {postfix_result.stderr}")
+                self.log_debug(f"Postfix stdout: {postfix_result.stdout}")
                 return False
             
             self.log_info("Reloading Dovecot configuration...")
             
             # Reload Dovecot
+            self.log_debug("Running: doveadm reload")
             dovecot_result = subprocess.run(['doveadm', 'reload'],
                                           capture_output=True, text=True, timeout=30)
             
             if dovecot_result.returncode != 0:
                 self.log_error(f"Dovecot reload failed: {dovecot_result.stderr}")
+                self.log_debug(f"Dovecot stdout: {dovecot_result.stdout}")
                 return False
             
             self.log_info("Mail service user configuration reload completed")
@@ -187,10 +245,12 @@ class MailUserReloadStrategy(UserReloadStrategy):
     def load_user_config(self, config_path):
         """Load and parse user configuration."""
         try:
+            self.log_debug(f"Loading user configuration from: {config_path}")
             with open(config_path, 'r') as f:
                 self.user_config = yaml.safe_load(f)
             
             self.log_info(f"Loaded user configuration: {config_path}")
+            self.log_debug(f"Found {len(self.user_config.get('domains', []))} domains and {len(self.user_config.get('test_users', []))} test users")
             return True
         except Exception as e:
             self.log_error(f"Failed to load user config: {e}")
@@ -231,6 +291,8 @@ class MailUserReloadStrategy(UserReloadStrategy):
     def create_user_directory(self, user_dir, services):
         """Create directory structure for a specific user."""
         user_path = os.path.join(self.user_data_path, 'users', user_dir)
+        
+        self.log_debug(f"Creating user directory: {user_path} with services: {services}")
         
         # Create base user directory
         os.makedirs(user_path, exist_ok=True)
@@ -296,6 +358,7 @@ class MailUserReloadStrategy(UserReloadStrategy):
     
     def generate_vmailbox_map(self):
         """Generate Postfix virtual mailbox map."""
+        self.log_debug("Generating Postfix virtual mailbox map")
         vmailbox_lines = []
         
         # Process domain users
@@ -326,6 +389,7 @@ class MailUserReloadStrategy(UserReloadStrategy):
                     vmailbox_lines.append(f"{email} users/{user_dir}/mail/Maildir/")
         
         # Write vmailbox file
+        self.log_debug(f"Writing {len(vmailbox_lines)} entries to /etc/postfix/vmailbox")
         with open('/etc/postfix/vmailbox', 'w') as f:
             f.write('\n'.join(vmailbox_lines) + '\n')
     
@@ -406,6 +470,7 @@ class MailUserReloadStrategy(UserReloadStrategy):
                     passwd_lines.append(passwd_line)
         
         # Write Dovecot passwd file
+        self.log_debug(f"Writing {len(passwd_lines)} entries to /etc/dovecot/passwd")
         with open('/etc/dovecot/passwd', 'w') as f:
             f.write('\n'.join(passwd_lines) + '\n')
         
@@ -486,7 +551,7 @@ class HotReloadUserEventHandler(UserConfigEventHandler):
         self.service_type = service_type
         self.domain = domain
         self.reload_strategy = self.create_reload_strategy()
-        self.debounce_time = 2  # seconds to wait for file operations to complete
+        self.debounce_time = 0.2  # seconds to wait for file operations to complete
         self.pending_reloads = {}  # track pending reloads for debouncing
     
     def create_reload_strategy(self):
@@ -750,12 +815,30 @@ def list_users(domain=None):
     except Exception as e:
         print(f"Error listing users: {e}")
 
+def generate_initial_configs(config_path, service_type, domain=None):
+    """Generate initial configuration files without starting hot-reload."""
+    logger.info(f"Generating initial {service_type} configurations from {config_path}")
+    
+    if service_type == 'mail':
+        strategy = MailUserReloadStrategy(domain)
+        success = strategy.generate_initial(config_path)
+        if success:
+            logger.info("Initial configuration generation completed successfully")
+        else:
+            logger.error("Initial configuration generation failed")
+        return success
+    else:
+        logger.error(f"Unknown service type: {service_type}")
+        return False
+
 def main():
     parser = argparse.ArgumentParser(description='User management tool with hot-reload capabilities')
     parser.add_argument('--watch', '-w', metavar='PATH',
                         help='Watch path for user configuration changes')
     parser.add_argument('--hot-reload', action='store_true',
                         help='Enable hot-reload functionality for service containers')
+    parser.add_argument('--generate-initial', action='store_true',
+                        help='Generate initial configuration files and exit')
     parser.add_argument('--service-type', choices=['mail'],
                         help='Service type for hot-reload (required with --hot-reload)')
     parser.add_argument('--domain', 
@@ -778,7 +861,14 @@ def main():
     
     args = parser.parse_args()
     
-    if args.hot_reload and args.watch:
+    if args.generate_initial:
+        if not args.service_type:
+            parser.error("--service-type is required when using --generate-initial")
+        # Default to users.yaml if no specific path given
+        config_path = args.watch if args.watch else '/data/user-data/config/users.yaml'
+        success = generate_initial_configs(config_path, args.service_type, args.domain)
+        sys.exit(0 if success else 1)
+    elif args.hot_reload and args.watch:
         if not args.service_type:
             parser.error("--service-type is required when using --hot-reload")
         watch_user_config_with_reload(args.watch, args.service_type, args.domain)
