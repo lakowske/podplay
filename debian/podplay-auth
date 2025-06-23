@@ -1,0 +1,900 @@
+#!/usr/bin/env python3
+"""
+PodPlay HTTP Authentication CLI Tool
+
+Tests authentication workflows by making HTTP requests to CGI endpoints,
+simulating browser behavior with session management and log verification.
+"""
+
+import os
+import sys
+import re
+import json
+import time
+import yaml
+import click
+import requests
+import subprocess
+import logging
+from pathlib import Path
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Tuple
+from urllib.parse import urljoin, urlparse
+from html.parser import HTMLParser
+
+# Configuration
+DEFAULT_BASE_URL = "https://lab.sethlakowske.com"
+DEFAULT_SESSION_FILE = Path.home() / ".podplay" / "session.json"
+LOG_PATH = "/data/logs/apache/auth.log"
+PENDING_PATH = "/data/user-data/pending"
+
+# Global verbose flag
+VERBOSE = False
+
+def setup_logging(verbose: bool = False):
+    """Setup logging configuration."""
+    global VERBOSE
+    VERBOSE = verbose
+    
+    level = logging.DEBUG if verbose else logging.WARNING
+    logging.basicConfig(
+        level=level,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%H:%M:%S'
+    )
+
+def verbose_print(message: str):
+    """Print message only in verbose mode."""
+    if VERBOSE:
+        click.echo(f"[DEBUG] {message}", err=True)
+
+class CSRFTokenExtractor(HTMLParser):
+    """Extract CSRF tokens from HTML forms."""
+    
+    def __init__(self):
+        super().__init__()
+        self.csrf_token = None
+        self.in_csrf_input = False
+    
+    def handle_starttag(self, tag, attrs):
+        if tag == "input":
+            attrs_dict = dict(attrs)
+            if attrs_dict.get("name") == "csrf_token":
+                self.csrf_token = attrs_dict.get("value")
+
+class HttpAuthClient:
+    """HTTP client for authentication operations."""
+    
+    def __init__(self, base_url: str = DEFAULT_BASE_URL, 
+                 session_file: Optional[Path] = None):
+        self.base_url = base_url.rstrip('/')
+        
+        # Enforce HTTPS for security
+        if not self.base_url.startswith('https://'):
+            raise ValueError("Base URL must use HTTPS to protect credentials")
+        
+        verbose_print(f"Initializing HTTP client for {self.base_url}")
+        
+        self.session = requests.Session()
+        self.session_file = session_file or DEFAULT_SESSION_FILE
+        verbose_print(f"Using session file: {self.session_file}")
+        
+        self.load_session()
+        
+        # Disable SSL verification for self-signed certificates
+        self.session.verify = False
+        requests.packages.urllib3.disable_warnings()
+        verbose_print("SSL verification disabled for self-signed certificates")
+    
+    def load_session(self):
+        """Load saved session cookies."""
+        if self.session_file.exists():
+            verbose_print(f"Loading existing session from {self.session_file}")
+            with open(self.session_file, 'r') as f:
+                cookies = json.load(f)
+                verbose_print(f"Loaded {len(cookies)} cookies from session")
+                for cookie in cookies:
+                    self.session.cookies.set(**cookie)
+        else:
+            verbose_print("No existing session file found")
+    
+    def save_session(self):
+        """Save session cookies."""
+        self.session_file.parent.mkdir(parents=True, exist_ok=True)
+        cookies = []
+        for cookie in self.session.cookies:
+            cookies.append({
+                'name': cookie.name,
+                'value': cookie.value,
+                'domain': cookie.domain,
+                'path': cookie.path
+            })
+        verbose_print(f"Saving {len(cookies)} cookies to {self.session_file}")
+        with open(self.session_file, 'w') as f:
+            json.dump(cookies, f, indent=2)
+    
+    def get_csrf_token(self, html: str) -> Optional[str]:
+        """Extract CSRF token from HTML."""
+        parser = CSRFTokenExtractor()
+        parser.feed(html)
+        return parser.csrf_token
+    
+    def request(self, method: str, path: str, allow_redirects: bool = True, headers: Optional[Dict] = None, **kwargs) -> requests.Response:
+        """Make HTTP request with error handling."""
+        url = urljoin(self.base_url, path)
+        
+        verbose_print(f"Making {method} request to {url} (allow_redirects={allow_redirects})")
+        if 'data' in kwargs:
+            verbose_print(f"POST data keys: {list(kwargs['data'].keys()) if isinstance(kwargs['data'], dict) else 'raw data'}")
+        if headers:
+            verbose_print(f"Request headers: {headers}")
+        
+        try:
+            response = self.session.request(method, url, allow_redirects=allow_redirects, headers=headers, **kwargs)
+            verbose_print(f"Response status: {response.status_code}")
+            verbose_print(f"Response headers: {dict(response.headers)}")
+            
+            if response.status_code >= 400:
+                verbose_print(f"Error response body: {response.text[:500]}...")
+            elif response.status_code in [301, 302, 303, 307, 308]:
+                verbose_print(f"Redirect response: {response.status_code}")
+                if 'Location' in response.headers:
+                    verbose_print(f"Redirect location: {response.headers['Location']}")
+            
+            # Don't raise for redirect status codes when not following redirects
+            if not allow_redirects and response.status_code in [301, 302, 303, 307, 308]:
+                pass  # Don't raise for redirects when we want to handle them manually
+            else:
+                response.raise_for_status()
+            return response
+        except requests.exceptions.RequestException as e:
+            verbose_print(f"Request exception: {type(e).__name__}: {e}")
+            click.echo(f"Request failed: {e}", err=True)
+            raise
+    
+    def get_form_page(self, path: str) -> Tuple[requests.Response, Optional[str]]:
+        """GET a form page and extract CSRF token."""
+        verbose_print(f"Getting form page: {path}")
+        response = self.request('GET', path)
+        
+        # Get CSRF token from dedicated endpoint instead of parsing HTML
+        verbose_print("Fetching CSRF token from /cgi-bin/csrf-token.py")
+        csrf_response = self.request('GET', '/cgi-bin/csrf-token.py')
+        csrf_data = csrf_response.json()
+        csrf_token = csrf_data.get('csrf_token')
+        verbose_print(f"Retrieved CSRF token: {csrf_token[:20]}...")
+        
+        return response, csrf_token
+    
+    def submit_form(self, path: str, data: Dict, 
+                   csrf_token: Optional[str] = None, allow_redirects: bool = True, headers: Optional[Dict] = None) -> requests.Response:
+        """Submit a form with CSRF token."""
+        verbose_print(f"Submitting form to {path}")
+        if csrf_token:
+            data['csrf_token'] = csrf_token
+            verbose_print(f"Added CSRF token to form data")
+        
+        verbose_print(f"Form data: {list(data.keys())}")
+        return self.request('POST', path, data=data, allow_redirects=allow_redirects, headers=headers)
+    
+    def login(self, username: str, password: str, 
+              domain: str = "lab.sethlakowske.com") -> bool:
+        """Login to the system."""
+        verbose_print(f"Attempting login - username: {username}, domain: {domain}")
+        
+        # Get CSRF token from dedicated endpoint
+        verbose_print("Getting CSRF token for login")
+        response = self.request('GET', '/cgi-bin/csrf-token.py')
+        csrf_data = response.json()
+        csrf_token = csrf_data.get('csrf_token')
+        verbose_print(f"Got CSRF token: {csrf_token[:20]}...")
+        
+        # Submit login form
+        login_data = {
+            'username': username,
+            'password': '[REDACTED]',  # Don't log the actual password
+            'domain': domain
+        }
+        verbose_print(f"Submitting login form with data: {login_data}")
+        
+        response = self.submit_form('/cgi-bin/auth.py', {
+            'username': username,
+            'password': password,
+            'domain': domain
+        }, csrf_token, allow_redirects=False)
+        
+        verbose_print(f"Login response URL: {response.url}")
+        verbose_print(f"Login response content preview: {response.text[:200]}...")
+        
+        # Check for successful authentication
+        # 1. Check if we got a redirect response (302) with Location header
+        is_redirect = response.status_code == 302 and 'Location' in response.headers
+        redirect_to_portal = is_redirect and '/portal/' in response.headers.get('Location', '')
+        
+        # 2. Check for success in response content
+        success_in_text = 'Login successful' in response.text
+        
+        # 3. Check for session cookie in response
+        session_cookie_present = any('session_id' in cookie.name for cookie in self.session.cookies)
+        
+        verbose_print(f"Login success check - redirect: {is_redirect}, to portal: {redirect_to_portal}, success text: {success_in_text}")
+        verbose_print(f"Session cookie present: {session_cookie_present}")
+        verbose_print(f"Current cookies: {[f'{c.name}={c.value[:20]}...' for c in self.session.cookies]}")
+        
+        success = is_redirect or redirect_to_portal or success_in_text or session_cookie_present
+        
+        if success:
+            verbose_print("Login successful, saving session")
+            self.save_session()
+        else:
+            verbose_print("Login failed")
+            # Check for specific error patterns
+            if 'Authentication failed' in response.text:
+                verbose_print("Authentication failed - credentials rejected")
+            elif 'Authentication Error' in response.text:
+                verbose_print("Authentication error - system error")
+            else:
+                verbose_print("Unknown login failure")
+        
+        return success
+    
+    def register(self, username: str, email: str, password: str) -> bool:
+        """Register a new user."""
+        # Get registration page and CSRF token
+        _, csrf_token = self.get_form_page('/auth/register.html')
+        
+        # Submit registration form
+        response = self.submit_form('/cgi-bin/register.py', {
+            'username': username,
+            'email': email,
+            'password': password,
+            'confirm_password': password
+        }, csrf_token)
+        
+        # Check for success message
+        return 'Registration successful' in response.text
+    
+    def confirm_registration(self, token: str) -> bool:
+        """Confirm user registration."""
+        response = self.request('GET', f'/cgi-bin/confirm.py?token={token}')
+        return 'confirmed successfully' in response.text
+    
+    def logout(self) -> bool:
+        """Logout from the system."""
+        response = self.request('GET', '/cgi-bin/logout.py')
+        self.session.cookies.clear()
+        self.save_session()
+        return True
+
+class TokenManager:
+    """Manage pending tokens from filesystem."""
+    
+    def __init__(self, container_name: str = "podplay-apache"):
+        self.container_name = container_name
+    
+    def get_pending_token(self, email: str, token_type: str = "registrations") -> Optional[str]:
+        """Get pending token for email address."""
+        verbose_print(f"Looking for {token_type} token for {email}")
+        
+        cmd = [
+            "podman", "exec", self.container_name,
+            "ls", f"{PENDING_PATH}/{token_type}/"
+        ]
+        
+        verbose_print(f"Running: {' '.join(cmd)}")
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            verbose_print(f"Found files: {result.stdout.strip()}")
+            
+            # Look for token files
+            for filename in result.stdout.split():
+                if filename.endswith('.yaml'):
+                    verbose_print(f"Checking token file: {filename}")
+                    # Read file to check if it's for our email
+                    read_cmd = [
+                        "podman", "exec", self.container_name,
+                        "cat", f"{PENDING_PATH}/{token_type}/{filename}"
+                    ]
+                    content = subprocess.run(read_cmd, capture_output=True, 
+                                           text=True, check=True).stdout
+                    
+                    if email in content:
+                        token = filename.replace('.yaml', '')
+                        verbose_print(f"Found matching token: {token}")
+                        return token
+            
+            verbose_print("No matching token found")
+            return None
+            
+        except subprocess.CalledProcessError as e:
+            verbose_print(f"Failed to get pending tokens: {e}")
+            return None
+
+class LogMonitor:
+    """Monitor and verify log entries."""
+    
+    def __init__(self, container_name: str = "podplay-apache"):
+        self.container_name = container_name
+        self.start_position = None
+    
+    def mark_position(self):
+        """Mark current log position."""
+        cmd = ["podman", "exec", self.container_name, "wc", "-l", LOG_PATH]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            self.start_position = int(result.stdout.split()[0])
+        except:
+            self.start_position = 0
+    
+    def get_new_entries(self) -> List[str]:
+        """Get log entries since marked position."""
+        if self.start_position is None:
+            return []
+        
+        cmd = [
+            "podman", "exec", self.container_name,
+            "tail", f"-n", f"+{self.start_position + 1}", LOG_PATH
+        ]
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            return result.stdout.strip().split('\n') if result.stdout.strip() else []
+        except:
+            return []
+    
+    def verify_entry(self, pattern: str, timeout: int = 5) -> bool:
+        """Verify log entry appears within timeout."""
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            entries = self.get_new_entries()
+            for entry in entries:
+                if pattern in entry:
+                    return True
+            time.sleep(0.5)
+        
+        return False
+    
+    def wait_for_entry(self, pattern: str, timeout: int = 5) -> Optional[str]:
+        """Wait for log entry and return it."""
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            entries = self.get_new_entries()
+            for entry in entries:
+                if pattern in entry:
+                    return entry
+            time.sleep(0.5)
+        
+        return None
+
+class UserManager:
+    """User management operations via admin CGI."""
+    
+    def __init__(self, client: HttpAuthClient):
+        self.client = client
+    
+    def list_users(self, domain: Optional[str] = None) -> List[Dict]:
+        """List all users via admin interface."""
+        params = {'action': 'list'}
+        if domain:
+            params['domain'] = domain
+        
+        response = self.client.request('GET', '/cgi-bin/users.py', 
+                                     params=params, headers={'Accept': 'application/json'})
+        
+        # Parse response based on content type
+        if response.headers.get('Content-Type', '').startswith('application/json'):
+            return response.json()
+        else:
+            # Parse HTML table or plain text response
+            # For now, return empty list if not JSON
+            return []
+    
+    def create_user(self, username: str, email: str, password: str,
+                   quota: str = "500M") -> bool:
+        """Create user via admin interface."""
+        _, csrf_token = self.client.get_form_page('/admin/users.html')
+        
+        response = self.client.submit_form('/cgi-bin/users.py', {
+            'action': 'create',
+            'username': username,
+            'email': email,
+            'password': password,
+            'quota': quota
+        }, csrf_token, headers={'Accept': 'application/json'})
+        
+        return response.status_code == 200
+    
+    def delete_user(self, email: str) -> bool:
+        """Delete user via admin interface."""
+        _, csrf_token = self.client.get_form_page('/admin/users.html')
+        
+        response = self.client.submit_form('/cgi-bin/users.py', {
+            'action': 'delete',
+            'email': email
+        }, csrf_token, headers={'Accept': 'application/json'})
+        
+        return response.status_code == 200
+    
+    def send_email(self, to_email: str, subject: str, message: str, 
+                   from_name: Optional[str] = None) -> bool:
+        """Send email to a user via admin interface."""
+        _, csrf_token = self.client.get_form_page('/admin/users.html')
+        
+        data = {
+            'to_email': to_email,
+            'subject': subject,
+            'message': message
+        }
+        
+        if from_name:
+            data['from_name'] = from_name
+        
+        response = self.client.submit_form('/cgi-bin/send-email.py', data, 
+                                         csrf_token, headers={'Accept': 'application/json'})
+        
+        return response.status_code == 200
+
+# CLI Commands
+@click.group()
+@click.option('--base-url', '-u', default=DEFAULT_BASE_URL,
+              help='Base URL for the server')
+@click.option('--session', '-s', help='Session name to use')
+@click.option('--verbose', '-v', is_flag=True, help='Enable verbose output')
+@click.pass_context
+def cli(ctx, base_url, session, verbose):
+    """PodPlay HTTP Authentication CLI Tool"""
+    setup_logging(verbose)
+    
+    session_file = None
+    if session:
+        session_file = Path.home() / ".podplay" / f"session-{session}.json"
+    
+    verbose_print(f"CLI started with base_url={base_url}, session={session}, verbose={verbose}")
+    
+    ctx.obj = {
+        'client': HttpAuthClient(base_url, session_file),
+        'tokens': TokenManager(),
+        'logs': LogMonitor()
+    }
+
+@cli.command()
+@click.option('--username', '-u', required=True, help='Username')
+@click.option('--password', '-p', required=True, help='Password')
+@click.option('--domain', '-d', default='lab.sethlakowske.com', help='Domain')
+@click.option('--save-as', help='Save session with name')
+@click.pass_context
+def login(ctx, username, password, domain, save_as):
+    """Login to the system"""
+    client = ctx.obj['client']
+    
+    if client.login(username, password, domain):
+        click.echo("Login successful")
+        
+        if save_as:
+            # Save session with specific name
+            session_file = Path.home() / ".podplay" / f"session-{save_as}.json"
+            client.session_file = session_file
+            client.save_session()
+            click.echo(f"Session saved as: {save_as}")
+    else:
+        click.echo("Login failed", err=True)
+        ctx.exit(1)
+
+@cli.command()
+@click.pass_context
+def logout(ctx):
+    """Logout from the system"""
+    client = ctx.obj['client']
+    
+    if client.logout():
+        click.echo("Logged out successfully")
+    else:
+        click.echo("Logout failed", err=True)
+        ctx.exit(1)
+
+@cli.command()
+@click.option('--username', '-u', required=True, help='Username')
+@click.option('--email', '-e', required=True, help='Email address')
+@click.option('--password', '-p', required=True, help='Password')
+@click.pass_context
+def register(ctx, username, email, password):
+    """Register a new user"""
+    client = ctx.obj['client']
+    logs = ctx.obj['logs']
+    
+    # Mark log position
+    logs.mark_position()
+    
+    if client.register(username, email, password):
+        click.echo("Registration submitted successfully")
+        
+        # Verify log entry
+        if logs.verify_entry(f"REGISTRATION_PENDING] User: {email}"):
+            click.echo("✓ Registration logged")
+        else:
+            click.echo("⚠ Registration log entry not found", err=True)
+    else:
+        click.echo("Registration failed", err=True)
+        ctx.exit(1)
+
+@cli.command()
+@click.option('--token', '-t', required=True, help='Confirmation token')
+@click.pass_context
+def confirm(ctx, token):
+    """Confirm registration or password reset"""
+    client = ctx.obj['client']
+    logs = ctx.obj['logs']
+    
+    # Mark log position
+    logs.mark_position()
+    
+    if client.confirm_registration(token):
+        click.echo("Confirmation successful")
+        
+        # Verify log entry
+        if logs.verify_entry("USER_CONFIRMED]"):
+            click.echo("✓ Confirmation logged")
+        else:
+            click.echo("⚠ Confirmation log entry not found", err=True)
+    else:
+        click.echo("Confirmation failed", err=True)
+        ctx.exit(1)
+
+@cli.group()
+@click.pass_context
+def tokens(ctx):
+    """Token management commands"""
+    pass
+
+@tokens.command('get-pending')
+@click.option('--email', '-e', required=True, help='Email address')
+@click.option('--type', '-t', 'token_type', 
+              type=click.Choice(['registrations', 'resets']),
+              default='registrations', help='Token type')
+@click.pass_context
+def get_pending_token(ctx, email, token_type):
+    """Get pending token for email"""
+    tokens = ctx.obj['tokens']
+    
+    token = tokens.get_pending_token(email, token_type)
+    if token:
+        click.echo(f"Token: {token}")
+    else:
+        click.echo(f"No pending {token_type} token found for {email}", err=True)
+        ctx.exit(1)
+
+@cli.group()
+@click.pass_context
+def users(ctx):
+    """User management commands"""
+    pass
+
+@users.command('list')
+@click.option('--domain', '-d', help='Filter by domain')
+@click.pass_context
+def list_users(ctx, domain):
+    """List all users"""
+    client = ctx.obj['client']
+    user_mgr = UserManager(client)
+    
+    users = user_mgr.list_users(domain)
+    
+    if users:
+        click.echo(f"{'Email':<40} {'Quota':<10} {'Services'}")
+        click.echo("-" * 60)
+        for user in users:
+            services = ','.join(user.get('services', []))
+            click.echo(f"{user['email']:<40} {user['quota']:<10} {services}")
+    else:
+        click.echo("No users found or not authorized")
+
+@users.command('create')
+@click.option('--username', '-u', required=True, help='Username')
+@click.option('--email', '-e', required=True, help='Email address')
+@click.option('--password', '-p', required=True, help='Password')
+@click.option('--quota', '-q', default='500M', help='Storage quota')
+@click.pass_context
+def create_user(ctx, username, email, password, quota):
+    """Create a new user (admin only)"""
+    client = ctx.obj['client']
+    logs = ctx.obj['logs']
+    user_mgr = UserManager(client)
+    
+    # Mark log position
+    logs.mark_position()
+    
+    if user_mgr.create_user(username, email, password, quota):
+        click.echo(f"User created: {email}")
+        
+        # Verify log entry
+        if logs.verify_entry(f"USER_CREATED] User: {email}"):
+            click.echo("✓ Creation logged")
+        else:
+            click.echo("⚠ Creation log entry not found", err=True)
+    else:
+        click.echo("Failed to create user", err=True)
+        ctx.exit(1)
+
+@users.command('email')
+@click.option('--to', '-t', required=True, help='Recipient email address')
+@click.option('--subject', '-s', required=True, help='Email subject')
+@click.option('--message', '-m', required=True, help='Email message')
+@click.option('--from-name', '-f', help='Sender name (optional)')
+@click.pass_context
+def email_user(ctx, to, subject, message, from_name):
+    """Send email to a user (admin only)"""
+    client = ctx.obj['client']
+    logs = ctx.obj['logs']
+    user_mgr = UserManager(client)
+    
+    # Mark log position
+    logs.mark_position()
+    
+    if user_mgr.send_email(to, subject, message, from_name):
+        click.echo(f"Email sent to: {to}")
+        click.echo(f"Subject: {subject}")
+        
+        # Verify log entry
+        if logs.verify_entry(f"Email send attempt - To: {to}"):
+            click.echo("✓ Email sending logged")
+        else:
+            click.echo("⚠ Email log entry not found", err=True)
+    else:
+        click.echo("Failed to send email", err=True)
+        ctx.exit(1)
+
+@cli.group()
+@click.pass_context
+def test(ctx):
+    """Testing commands"""
+    pass
+
+@test.command('monitor')
+@click.option('--timeout', '-t', default=30, help='Monitor timeout in seconds')
+@click.pass_context
+def monitor_logs(ctx, timeout):
+    """Monitor auth logs in real-time"""
+    container = "podplay-apache"
+    cmd = ["podman", "exec", "-it", container, "tail", "-f", LOG_PATH]
+    
+    click.echo(f"Monitoring {LOG_PATH} (Ctrl+C to stop)...")
+    try:
+        subprocess.run(cmd, timeout=timeout)
+    except KeyboardInterrupt:
+        click.echo("\nStopped monitoring")
+    except subprocess.TimeoutExpired:
+        click.echo(f"\nMonitoring timed out after {timeout} seconds")
+
+@test.command('verify-logs')
+@click.option('--expect', '-e', required=True, help='Expected log pattern')
+@click.option('--timeout', '-t', default=5, help='Timeout in seconds')
+@click.pass_context
+def verify_logs(ctx, expect, timeout):
+    """Verify expected log entry appears"""
+    logs = ctx.obj['logs']
+    
+    if logs.verify_entry(expect, timeout):
+        click.echo(f"✓ Found: {expect}")
+    else:
+        click.echo(f"✗ Not found: {expect}", err=True)
+        ctx.exit(1)
+
+@test.command('registration-flow')
+@click.option('--username', '-u', required=True, help='Test username')
+@click.option('--email', '-e', required=True, help='Test email')
+@click.option('--password', '-p', required=True, help='Test password')
+@click.option('--cleanup/--no-cleanup', default=True, help='Cleanup after test')
+@click.pass_context
+def test_registration_flow(ctx, username, email, password, cleanup):
+    """Test complete registration workflow"""
+    client = ctx.obj['client']
+    tokens = ctx.obj['tokens']
+    logs = ctx.obj['logs']
+    
+    click.echo("=== Testing Registration Flow ===")
+    
+    # Step 1: Register
+    click.echo("1. Submitting registration...")
+    logs.mark_position()
+    
+    if not client.register(username, email, password):
+        click.echo("✗ Registration failed", err=True)
+        ctx.exit(1)
+    
+    click.echo("✓ Registration submitted")
+    
+    # Verify log
+    if logs.verify_entry(f"REGISTRATION_PENDING] User: {email}"):
+        click.echo("✓ Registration logged")
+    else:
+        click.echo("✗ Registration not logged", err=True)
+        ctx.exit(1)
+    
+    # Step 2: Get token
+    click.echo("2. Retrieving confirmation token...")
+    time.sleep(1)  # Give system time to create token
+    
+    token = tokens.get_pending_token(email, "registrations")
+    if not token:
+        click.echo("✗ Token not found", err=True)
+        ctx.exit(1)
+    
+    click.echo(f"✓ Token retrieved: {token}")
+    
+    # Step 3: Confirm
+    click.echo("3. Confirming registration...")
+    logs.mark_position()
+    
+    if not client.confirm_registration(token):
+        click.echo("✗ Confirmation failed", err=True)
+        ctx.exit(1)
+    
+    click.echo("✓ Registration confirmed")
+    
+    # Verify log
+    if logs.verify_entry("USER_CONFIRMED]"):
+        click.echo("✓ Confirmation logged")
+    else:
+        click.echo("✗ Confirmation not logged", err=True)
+        ctx.exit(1)
+    
+    # Step 4: Test login
+    click.echo("4. Testing login...")
+    logs.mark_position()
+    
+    if not client.login(email, password):
+        click.echo("✗ Login failed", err=True)
+        ctx.exit(1)
+    
+    click.echo("✓ Login successful")
+    
+    # Verify log
+    if logs.verify_entry(f"LOGIN_SUCCESS] User: {email}"):
+        click.echo("✓ Login logged")
+    else:
+        click.echo("✗ Login not logged", err=True)
+    
+    # Step 5: Verify user exists
+    click.echo("5. Verifying user in system...")
+    user_mgr = UserManager(client)
+    users = user_mgr.list_users()
+    
+    user_found = any(u.get('email') == email for u in users)
+    if user_found:
+        click.echo("✓ User found in system")
+    else:
+        click.echo("⚠ User not found via admin interface")
+    
+    # Cleanup
+    if cleanup:
+        click.echo("\nCleaning up test user...")
+        if user_mgr.delete_user(email):
+            click.echo("✓ Test user deleted")
+        else:
+            click.echo("⚠ Failed to delete test user")
+    
+    click.echo("\n=== Registration Flow Test Complete ===")
+    click.echo("Result: PASSED" if user_found else "Result: FAILED")
+
+@test.command('run-all')
+@click.option('--verbose', '-v', is_flag=True, help='Verbose output')
+@click.pass_context
+def run_all_tests(ctx, verbose):
+    """Run all authentication tests"""
+    import random
+    import string
+    
+    click.echo("=== Running All Authentication Tests ===\n")
+    
+    # Generate unique test data
+    suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+    test_user = f"test_{suffix}"
+    test_email = f"{test_user}@lab.sethlakowske.com"
+    test_pass = f"Pass_{suffix}!"
+    
+    tests = [
+        ("Registration Flow", ["test", "registration-flow", 
+                              "-u", test_user, "-e", test_email, "-p", test_pass]),
+        # Add more tests here
+    ]
+    
+    passed = 0
+    failed = 0
+    
+    for test_name, test_cmd in tests:
+        click.echo(f"Running: {test_name}")
+        
+        try:
+            # Run test command
+            result = ctx.invoke(test, test_cmd)
+            click.echo(f"✓ {test_name} PASSED\n")
+            passed += 1
+        except Exception as e:
+            click.echo(f"✗ {test_name} FAILED: {e}\n", err=True)
+            failed += 1
+            if verbose:
+                import traceback
+                traceback.print_exc()
+    
+    # Summary
+    click.echo("=== Test Summary ===")
+    click.echo(f"Passed: {passed}")
+    click.echo(f"Failed: {failed}")
+    click.echo(f"Total: {passed + failed}")
+    
+    if failed > 0:
+        ctx.exit(1)
+
+@cli.command()
+@click.pass_context
+def bootstrap(ctx):
+    """Bootstrap admin access"""
+    click.echo("=== Bootstrapping Admin Access ===")
+    
+    # Step 1: Create admin user via podman exec
+    click.echo("1. Creating admin user...")
+    
+    cmd = [
+        "podman", "exec", "podplay-mail",
+        "/data/src/user_manager.py",
+        "--add-user", "--user", "admin",
+        "--password", "admin_temp_123",
+        "--domain", "lab.sethlakowske.com",
+        "--quota", "2G",
+        "--confirm-email"
+    ]
+    
+    verbose_print(f"Running command: {' '.join(cmd)}")
+    
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        click.echo("✓ Admin user created")
+        verbose_print(f"User creation stdout: {result.stdout}")
+        if result.stderr:
+            verbose_print(f"User creation stderr: {result.stderr}")
+    except subprocess.CalledProcessError as e:
+        # User might already exist, continue
+        click.echo("⚠ Admin user may already exist, continuing...")
+        verbose_print(f"User creation failed - stdout: {e.stdout}")
+        verbose_print(f"User creation failed - stderr: {e.stderr}")
+        verbose_print(f"Return code: {e.returncode}")
+    
+    # Step 2: Login as admin (skip web registration since email is confirmed)
+    click.echo("2. Logging in as admin...")
+    
+    client = ctx.obj['client']
+    
+    # Try both username formats
+    login_success = False
+    for username in ["admin", "admin@lab.sethlakowske.com"]:
+        verbose_print(f"Trying login with username: {username}")
+        try:
+            if client.login(username, "admin_temp_123", "lab.sethlakowske.com"):
+                click.echo(f"✓ Admin login successful as {username}")
+                login_success = True
+                break
+        except Exception as e:
+            verbose_print(f"Login failed for {username}: {e}")
+            continue
+    
+    if login_success:
+        # Save as admin session
+        session_file = Path.home() / ".podplay" / "session-admin.json"
+        client.session_file = session_file
+        client.save_session()
+        click.echo("✓ Admin session saved")
+        
+        click.echo("\n=== Bootstrap Complete ===")
+        click.echo("Admin session saved. Use --session admin for admin operations.")
+        click.echo("⚠️  Change the admin password immediately!")
+    else:
+        click.echo("✗ All login attempts failed", err=True)
+        verbose_print("Bootstrap failed - admin user exists but login failed")
+        click.echo("Try manually confirming the admin user via web interface")
+        ctx.exit(1)
+
+if __name__ == '__main__':
+    cli()

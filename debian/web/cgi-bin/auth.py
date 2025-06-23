@@ -22,6 +22,14 @@ from rate_limit import RateLimiter
 from cgi_wrapper import cgi_main_wrapper, get_client_context, log_form_data
 from logger import CGILogger, ValidationError, AuthenticationError, RateLimitError
 
+# Enable verbose logging for debugging
+VERBOSE_DEBUG = True
+
+def debug_log(logger, message, **kwargs):
+    """Log debug message if verbose debugging is enabled."""
+    if VERBOSE_DEBUG:
+        logger.log_info(f"[DEBUG] {message}", **kwargs)
+
 def auth_main():
     """Main authentication logic with improved error handling"""
     
@@ -42,7 +50,7 @@ def auth_main():
         rate_limiter = RateLimiter()
     except Exception as e:
         logger.log_error("Failed to initialize authentication components", exception=e, client_ip=client_ip)
-        raise ConfigurationError("Authentication system initialization failed")
+        raise AuthenticationError("Authentication system initialization failed")
     
     # Check rate limit
     if not rate_limiter.check_limit(client_ip, 'login'):
@@ -84,9 +92,16 @@ def auth_main():
                    user_email=email, client_ip=client_ip,
                    extra={'domain': domain})
     
+    debug_log(logger, f"Starting authentication for email: {email}, domain: {domain}", 
+              user_email=email, client_ip=client_ip)
+    
     # Authenticate user
     try:
+        debug_log(logger, f"Calling user_db.authenticate() for {email}", 
+                  user_email=email, client_ip=client_ip)
         auth_success = user_db.authenticate(email, password)
+        debug_log(logger, f"Authentication result for {email}: {auth_success}", 
+                  user_email=email, client_ip=client_ip)
     except Exception as e:
         logger.log_error("Database authentication error", exception=e, 
                         user_email=email, client_ip=client_ip)
@@ -97,9 +112,6 @@ def auth_main():
         try:
             # Create session
             session_id = session_mgr.create_session(email, client_ip, client_context['user_agent'])
-            
-            # Set session cookie
-            print(f"Set-Cookie: session_id={session_id}; Path=/; HttpOnly; Secure; SameSite=Strict")
             
             # Log successful login (both old and new systems)
             log_auth_event('login_success', email, client_ip)
@@ -116,7 +128,12 @@ def auth_main():
                                         user_email=email, client_ip=client_ip)
                 redirect_url = '/portal/'
             
-            print(f'<meta http-equiv="refresh" content="0;url={redirect_url}">')
+            # Set session cookie and redirect (proper CGI headers)
+            print(f"Set-Cookie: session_id={session_id}; Path=/; HttpOnly; Secure; SameSite=Strict")
+            print(f"Location: {redirect_url}")
+            print("Status: 302 Found")
+            print("Content-Type: text/html")
+            print()  # Blank line required between headers and content
             print("<html><body>Login successful. Redirecting...</body></html>")
             
         except Exception as e:
@@ -139,8 +156,12 @@ def auth_main():
         # Log to old auth system
         log_auth_event('login_failed', email, client_ip)
         
-        # Generic error message for security
-        raise AuthenticationError("Invalid username or password")
+        # Send authentication failure response with proper headers
+        print("Content-Type: text/html")
+        print("Status: 401 Unauthorized")
+        print()  # Blank line between headers and content
+        print("<h1>Authentication Failed</h1><p>Invalid username or password</p>")
+        return
 
 def log_auth_event(event_type, email, ip_address):
     """Legacy authentication event logging (maintained for compatibility)"""
@@ -159,4 +180,18 @@ def log_auth_event(event_type, email, ip_address):
         pass
 
 if __name__ == "__main__":
-    cgi_main_wrapper(auth_main, "auth.py")
+    # Don't use cgi_main_wrapper because we need to control headers
+    try:
+        auth_main()
+    except (ValidationError, AuthenticationError, RateLimitError) as e:
+        # Send proper error response with headers
+        print("Content-Type: text/html")
+        print("Status: 400 Bad Request")
+        print()  # Blank line between headers and content
+        print(f"<h1>Error</h1><p>{str(e)}</p>")
+    except Exception as e:
+        # Send server error response
+        print("Content-Type: text/html") 
+        print("Status: 500 Internal Server Error")
+        print()  # Blank line between headers and content
+        print(f"<h1>Internal Server Error</h1><p>An unexpected error occurred.</p>")

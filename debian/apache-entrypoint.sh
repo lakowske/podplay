@@ -150,6 +150,18 @@ cat > /etc/apache2/sites-available/000-default.conf << EOF
         Require all granted
     </Directory>
     
+    # CGI configuration for authentication
+    ScriptAlias /cgi-bin/ /var/www/cgi-bin/
+    <Directory "/var/www/cgi-bin">
+        Options +ExecCGI
+        AddHandler cgi-script .py
+        Require all granted
+        
+        # Pass environment variables to CGI scripts
+        PassEnv DOMAIN
+        SetEnv PYTHONPATH /data/.venv/lib/python3.11/site-packages
+    </Directory>
+    
     # Add a header to indicate HTTP
     Header always set X-Protocol "HTTP"
 </VirtualHost>

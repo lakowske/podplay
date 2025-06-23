@@ -4,7 +4,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     apache2 \
     ssl-cert \
     python3-yaml \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies for CLI tool
+RUN pip3 install --no-cache-dir \
+    click \
+    requests \
+    pyyaml
 
 # Enable necessary Apache modules including CGI for authentication
 RUN a2enmod ssl headers rewrite cgi
@@ -22,11 +29,20 @@ RUN mkdir -p /var/www/html /var/www/cgi-bin /var/www/html/auth /var/www/html/por
     /var/www/templates/emails /var/www/templates/pages && \
     chown -R www-data:www-data /var/www
 
+# Copy CLI tool and CGI scripts
+COPY debian/podplay-auth /usr/local/bin/
+COPY debian/cgi-bin/ /var/www/cgi-bin/
+RUN chmod +x /usr/local/bin/podplay-auth
+
 # Copy authentication web content
 COPY debian/web/ /var/www/
 
 # Copy authentication configuration templates
 COPY debian/apache-auth-configs/ /etc/apache2/auth-templates/
+
+# Create directories for auth data
+RUN mkdir -p /data/user-data/auth/{tokens,roles} && \
+    chmod -R 750 /data/user-data/auth
 
 # Set permissions for CGI scripts and make them executable
 RUN chmod -R 755 /var/www/cgi-bin && \

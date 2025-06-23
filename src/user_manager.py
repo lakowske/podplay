@@ -285,6 +285,9 @@ class MailUserReloadStrategy(UserReloadStrategy):
             # Generate Dovecot password database
             self.generate_dovecot_passwd()
             
+            # Configure Dovecot to use passwd-file authentication
+            self.configure_dovecot_auth()
+            
             self.log_info("Service configuration files generated")
             return True
         except Exception as e:
@@ -372,8 +375,11 @@ class MailUserReloadStrategy(UserReloadStrategy):
                             email = username
                             user_dir = username
                         
-                        # Generate password hash
-                        password_hash = self.generate_password_hash(password)
+                        # Use existing hash if it's already hashed, otherwise generate new hash
+                        if password.startswith("$6$"):
+                            password_hash = password  # Already hashed
+                        else:
+                            password_hash = self.generate_password_hash(password)
                         
                         # Dovecot passwd format: user:password:uid:gid:gecos:home:shell
                         # Use user-data structure for home directory
@@ -390,7 +396,11 @@ class MailUserReloadStrategy(UserReloadStrategy):
                     password = user['password']
                     email = f"{username}@{domain}"
                     
-                    password_hash = self.generate_password_hash(password)
+                    # Use existing hash if it's already hashed, otherwise generate new hash
+                    if password.startswith("$6$"):
+                        password_hash = password  # Already hashed
+                    else:
+                        password_hash = self.generate_password_hash(password)
                     home_dir = f"/data/user-data/users/{email}/mail"
                     passwd_line = f"{email}:{password_hash}:vmail:vmail::{home_dir}::"
                     passwd_lines.append(passwd_line)
@@ -405,6 +415,38 @@ class MailUserReloadStrategy(UserReloadStrategy):
             shutil.chown('/etc/dovecot/passwd', group='dovecot')
         except (OSError, KeyError):
             pass  # Ownership changes may fail in containers
+    
+    def configure_dovecot_auth(self):
+        """Configure Dovecot to use passwd-file authentication."""
+        try:
+            self.log_info("Configuring Dovecot authentication...")
+            
+            # Update 10-auth.conf to use passwd-file authentication
+            auth_conf_path = '/etc/dovecot/conf.d/10-auth.conf'
+            
+            # Read current configuration
+            with open(auth_conf_path, 'r') as f:
+                lines = f.readlines()
+            
+            # Update configuration to use passwd-file instead of system auth
+            updated_lines = []
+            for line in lines:
+                if line.strip() == '!include auth-system.conf.ext':
+                    updated_lines.append('#!include auth-system.conf.ext\n')
+                    updated_lines.append('!include auth-passwdfile.conf.ext\n')
+                elif line.strip() == '#!include auth-passwdfile.conf.ext':
+                    updated_lines.append('!include auth-passwdfile.conf.ext\n')
+                else:
+                    updated_lines.append(line)
+            
+            # Write updated configuration
+            with open(auth_conf_path, 'w') as f:
+                f.writelines(updated_lines)
+            
+            self.log_info("Dovecot authentication configuration updated")
+            
+        except Exception as e:
+            self.log_error(f"Failed to configure Dovecot authentication: {e}")
     
     def authentication_test(self):
         """Test user authentication after reload."""
@@ -562,7 +604,7 @@ def watch_user_config_with_reload(path, service_type, domain=None):
     
     observer.join()
 
-def add_user(username, password, domain, quota="100M", services=None):
+def add_user(username, password, domain, quota="100M", services=None, confirm_email=False):
     """Add a new user to the configuration."""
     if services is None:
         services = ["mail"]
@@ -587,13 +629,19 @@ def add_user(username, password, domain, quota="100M", services=None):
         config['test_users'] = [u for u in config['test_users'] 
                                if f"{u['username']}@{u['domain']}" != email]
         
+        # Hash password before storing
+        strategy = UserReloadStrategy()
+        hashed_password = strategy.generate_password_hash(password)
+        
         # Add new user
         new_user = {
             "username": username,
-            "password": password,
+            "password": hashed_password,
             "domain": domain,
             "quota": quota,
-            "services": services
+            "services": services,
+            "enabled": True,
+            "email_confirmed": confirm_email
         }
         config['test_users'].append(new_user)
         
@@ -725,6 +773,8 @@ def main():
     parser.add_argument('--quota', default='100M', help='User quota (default: 100M)')
     parser.add_argument('--services', default='mail', 
                         help='Comma-separated list of services (default: mail)')
+    parser.add_argument('--confirm-email', action='store_true',
+                        help='Mark user email as confirmed (for bootstrap/admin users)')
     
     args = parser.parse_args()
     
@@ -736,7 +786,7 @@ def main():
         if not args.user or not args.password or not args.domain:
             parser.error("--user, --password, and --domain are required for --add-user")
         services = [s.strip() for s in args.services.split(',')]
-        add_user(args.user, args.password, args.domain, args.quota, services)
+        add_user(args.user, args.password, args.domain, args.quota, services, args.confirm_email)
     elif args.remove_user:
         if not args.user or not args.domain:
             parser.error("--user and --domain are required for --remove-user")
