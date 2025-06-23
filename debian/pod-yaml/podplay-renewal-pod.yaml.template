@@ -11,10 +11,10 @@ spec:
   volumes:
     - name: certs
       persistentVolumeClaim:
-        claimName: certs
+        claimName: ${PODPLAY_CERTS_VOLUME}
     - name: logs
       persistentVolumeClaim:
-        claimName: logs
+        claimName: ${PODPLAY_LOGS_VOLUME}
   
   containers:
     - name: certbot
@@ -22,19 +22,19 @@ spec:
       command: ["/usr/local/bin/certbot-entrypoint.sh", "renew"]
       env:
         - name: CERT_TYPE
-          value: "letsencrypt"
+          value: "${PODPLAY_CERT_TYPE}"
         - name: DOMAIN
-          value: "sethcore.com"
+          value: "${PODPLAY_DOMAIN}"
         - name: EMAIL
-          value: "lakowske@gmail.com"
+          value: "${PODPLAY_EMAIL}"
       volumeMounts:
         - name: certs
           mountPath: /data/certificates
         - name: logs
           mountPath: /data/logs
       ports:
-        - containerPort: 80
-          hostPort: 80
+        - containerPort: ${PODPLAY_CONTAINER_HTTP_PORT}
+          hostPort: ${PODPLAY_HOST_HTTP_PORT}
           protocol: TCP
       securityContext:
         runAsUser: 0

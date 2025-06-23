@@ -2,6 +2,11 @@
 .PHONY: pod-init pod-up pod-down pod-status pod-logs pod-renewal pod-cert-cleanup
 .PHONY: user-add user-remove user-list user-test user-reload
 .PHONY: test-auth test-auth-clean
+.PHONY: generate-configs env-switch env-check
+
+# Load environment configuration if exists
+-include .env
+export
 
 # Debian-specific targets
 all: apache bind mail certbot
@@ -138,11 +143,45 @@ run-mail: volumes
 		-e MAIL_SERVER_NAME=mail.$(DOMAIN) \
 		podplay-mail-debian:latest
 
+# Environment configuration targets
+generate-configs:
+	@./generate-configs.sh
+
+env-check:
+	@if [ ! -f ".env" ]; then \
+		echo "Error: .env file not found."; \
+		echo "Available environments:"; \
+		echo "  make env-switch ENV=lab     # For lab.sethlakowske.com"; \
+		echo "  make env-switch ENV=sethcore # For sethcore.com"; \
+		exit 1; \
+	fi
+	@echo "Current environment configuration:"
+	@echo "  Domain: $${PODPLAY_DOMAIN:-not set}"
+	@echo "  HTTP Port: $${PODPLAY_HOST_HTTP_PORT:-not set}"
+	@echo "  HTTPS Port: $${PODPLAY_HOST_HTTPS_PORT:-not set}"
+	@echo "  SMTP Port: $${PODPLAY_HOST_SMTP_PORT:-not set}"
+	@echo "  Submission Port: $${PODPLAY_HOST_SUBMISSION_PORT:-not set}"
+	@echo "  IMAPS Port: $${PODPLAY_HOST_IMAPS_PORT:-not set}"
+
+env-switch:
+	@if [ -z "$(ENV)" ]; then \
+		echo "Error: ENV parameter required"; \
+		echo "Usage: make env-switch ENV=lab|sethcore"; \
+		exit 1; \
+	fi
+	@if [ ! -f ".env.$(ENV)" ]; then \
+		echo "Error: Environment file .env.$(ENV) not found"; \
+		exit 1; \
+	fi
+	@echo "Switching to $(ENV) environment..."
+	@cp .env.$(ENV) .env
+	@$(MAKE) generate-configs
+
 # Pod deployment targets
-pod-init: volumes
+pod-init: volumes env-check generate-configs
 	@echo "Starting certificate initialization pod..."
-	@echo "This will generate SSL certificates for lab.sethlakowske.com"
-	@echo "Port 8080 must be available for Let's Encrypt validation"
+	@echo "This will generate SSL certificates for $${PODPLAY_DOMAIN}"
+	@echo "Port $${PODPLAY_HOST_HTTP_PORT} must be available for Let's Encrypt validation"
 	podman play kube pod-yaml/podplay-init-pod.yaml
 	@echo ""
 	@echo "Certificate initialization started. Monitor with:"
@@ -162,7 +201,7 @@ pod-cert-cleanup:
 	@echo "Ready to start services with:"
 	@echo "  make pod-up"
 
-pod-up: volumes
+pod-up: volumes env-check generate-configs
 	@echo "Starting PodPlay services pod..."
 	@echo "This will start Apache, BIND DNS, and Mail services"
 	podman play kube pod-yaml/podplay-pod.yaml
@@ -185,7 +224,7 @@ pod-logs:
 	@echo "Showing PodPlay pod logs..."
 	podman pod logs -f podplay
 
-pod-renewal: volumes
+pod-renewal: volumes env-check generate-configs
 	@echo "Running certificate renewal pod..."
 	@echo "This will attempt to renew existing Let's Encrypt certificates"
 	podman play kube pod-yaml/podplay-renewal-pod.yaml
@@ -265,12 +304,18 @@ help:
 	@echo "  mail     - Build Debian mail server container"
 	@echo "  certbot  - Build Debian Certbot container"
 	@echo ""
+	@echo "Environment Configuration:"
+	@echo "  env-check             - Show current environment configuration"
+	@echo "  env-switch ENV=<name> - Switch to environment (lab or sethcore)"
+	@echo "  generate-configs      - Regenerate pod YAML files from templates"
+	@echo ""
 	@echo "Pod Deployment Workflow:"
-	@echo "  1. make all           - Build all container images"
-	@echo "  2. make volumes       - Create required volumes"
-	@echo "  3. make pod-init      - Generate SSL certificates"
-	@echo "  4. make pod-cert-cleanup - Clean up certificate pod"
-	@echo "  5. make pod-up        - Start PodPlay services"
+	@echo "  1. make env-switch ENV=<name> - Select your environment"
+	@echo "  2. make all                   - Build all container images"
+	@echo "  3. make volumes               - Create required volumes"
+	@echo "  4. make pod-init              - Generate SSL certificates"
+	@echo "  5. make pod-cert-cleanup      - Clean up certificate pod"
+	@echo "  6. make pod-up                - Start PodPlay services"
 	@echo ""
 	@echo "Pod Management:"
 	@echo "  pod-status    - Show pod and container status"

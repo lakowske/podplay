@@ -196,7 +196,9 @@ temp/
 *.pfx
 
 # Environment variables
-.env.*
+.env
+!.env.lab
+!.env.sethcore
 !.env.example
 
 # Local configuration overrides
@@ -224,3 +226,8 @@ local.conf
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Generated pod YAML files
+debian/pod-yaml/podplay-init-pod.yaml
+debian/pod-yaml/podplay-pod.yaml
+debian/pod-yaml/podplay-renewal-pod.yaml

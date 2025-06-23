@@ -1,30 +1,44 @@
 # PodPlay Pod Deployment
 
-This directory contains Podman Kubernetes YAML files for deploying the PodPlay service stack as pods.
+This directory contains Podman Kubernetes YAML templates for deploying the PodPlay service stack as pods.
 
-## Quick Start
+## Environment-Based Configuration
+
+PodPlay now supports multiple deployment environments with automatic configuration generation.
+
+### Quick Start
 
 ```bash
+# Switch to your environment (lab or sethcore)
+make env-switch ENV=sethcore  # For sethcore.com VPS
+# OR
+make env-switch ENV=lab       # For lab.sethlakowske.com home network
+
 # Build all images
 make all
 
 # Deploy the complete stack
-make deploy
-
-# Or manually:
-# 1. Initialize certificates
-make pod-init
-# 2. Wait for completion and cleanup
-podman play kube --down pod-yaml/podplay-init-pod.yaml
-# 3. Start services
-make pod-up
+make pod-init         # Generate certificates
+make pod-cert-cleanup # Clean up cert pod
+make pod-up          # Start services
 ```
 
 ## Files
 
-- `podplay-init-pod.yaml` - Certificate initialization pod
-- `podplay-pod.yaml` - Main services pod (Apache, BIND, Mail)
-- `podplay-renewal-pod.yaml` - Certificate renewal pod
+### Templates (in version control)
+- `podplay-init-pod.yaml.template` - Certificate initialization pod template
+- `podplay-pod.yaml.template` - Main services pod template (Apache, BIND, Mail)
+- `podplay-renewal-pod.yaml.template` - Certificate renewal pod template
+
+### Generated Files (git-ignored)
+- `podplay-init-pod.yaml` - Generated from template with environment values
+- `podplay-pod.yaml` - Generated from template with environment values
+- `podplay-renewal-pod.yaml` - Generated from template with environment values
+
+### Environment Files
+- `.env.lab` - Configuration for lab.sethlakowske.com (home network)
+- `.env.sethcore` - Configuration for sethcore.com (VPS)
+- `.env` - Active configuration (copied from one of the above)
 
 ## Available Commands
 
@@ -38,18 +52,35 @@ make pod-renewal   # Run certificate renewal
 
 ## Configuration
 
-Edit the YAML files to customize:
-- Domain name
-- Email address
-- Certificate type (letsencrypt/self-signed)
-- Port mappings
-- Resource limits
+### Switching Environments
 
-Or use environment variables:
 ```bash
-export PODPLAY_DOMAIN=mydomain.com
-export PODPLAY_EMAIL=admin@mydomain.com
+# Check current environment
+make env-check
+
+# Switch to a different environment
+make env-switch ENV=lab       # Home network deployment
+make env-switch ENV=sethcore  # VPS deployment
 ```
+
+### Creating New Environments
+
+1. Create a new environment file: `.env.myenv`
+2. Set all required variables (copy from `.env.lab` or `.env.sethcore` as template)
+3. Switch to it: `make env-switch ENV=myenv`
+
+### Environment Variables
+
+Key configuration variables:
+- `PODPLAY_DOMAIN` - Your domain name
+- `PODPLAY_EMAIL` - Email for Let's Encrypt
+- `PODPLAY_HOST_HTTP_PORT` - Host port for HTTP (80 or 8080)
+- `PODPLAY_HOST_HTTPS_PORT` - Host port for HTTPS (443 or 8443)
+- `PODPLAY_HOST_SMTP_PORT` - Host port for SMTP (25 or 2525)
+- `PODPLAY_HOST_SUBMISSION_PORT` - Host port for mail submission (587 or 2587)
+- `PODPLAY_HOST_IMAPS_PORT` - Host port for IMAPS (993 or 2993)
+- `PODPLAY_CERT_TYPE` - Certificate type (letsencrypt/self-signed)
+- `PODPLAY_STAGING` - Use Let's Encrypt staging (true/false)
 
 ## Troubleshooting
 

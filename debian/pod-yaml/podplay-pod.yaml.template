@@ -12,13 +12,13 @@ spec:
   volumes:
     - name: certs
       persistentVolumeClaim:
-        claimName: certs
+        claimName: ${PODPLAY_CERTS_VOLUME}
     - name: logs
       persistentVolumeClaim:
-        claimName: logs
+        claimName: ${PODPLAY_LOGS_VOLUME}
     - name: user-data
       persistentVolumeClaim:
-        claimName: user-data
+        claimName: ${PODPLAY_USER_DATA_VOLUME}
   
   # Service containers
   containers:
@@ -27,7 +27,7 @@ spec:
       image: localhost/podplay-apache-debian:latest
       env:
         - name: DOMAIN
-          value: "sethcore.com"
+          value: "${PODPLAY_DOMAIN}"
       volumeMounts:
         - name: certs
           mountPath: /data/certificates
@@ -37,22 +37,22 @@ spec:
         - name: user-data
           mountPath: /data/user-data
       ports:
-        - containerPort: 80
-          hostPort: 80
+        - containerPort: ${PODPLAY_CONTAINER_HTTP_PORT}
+          hostPort: ${PODPLAY_HOST_HTTP_PORT}
           protocol: TCP
-        - containerPort: 443
-          hostPort: 443
+        - containerPort: ${PODPLAY_CONTAINER_HTTPS_PORT}
+          hostPort: ${PODPLAY_HOST_HTTPS_PORT}
           protocol: TCP
       livenessProbe:
         httpGet:
           path: /
-          port: 80
+          port: ${PODPLAY_CONTAINER_HTTP_PORT}
         initialDelaySeconds: 30
         periodSeconds: 10
       readinessProbe:
         httpGet:
           path: /
-          port: 80
+          port: ${PODPLAY_CONTAINER_HTTP_PORT}
         initialDelaySeconds: 5
         periodSeconds: 5
     
@@ -61,11 +61,11 @@ spec:
       image: localhost/podplay-bind-debian:latest
       env:
         - name: DOMAIN_NAME
-          value: "sethcore.com"
+          value: "${PODPLAY_DOMAIN}"
         - name: DOMAIN_IP
-          value: "127.0.0.1"
+          value: "${PODPLAY_DOMAIN_IP}"
         - name: DNS_FORWARDERS
-          value: "8.8.8.8; 8.8.4.4; 1.1.1.1; 1.0.0.1"
+          value: "${PODPLAY_DNS_FORWARDERS}"
       volumeMounts:
         - name: logs
           mountPath: /data/logs
@@ -82,7 +82,7 @@ spec:
             - /usr/bin/dig
             - "@127.0.0.1"
             - "+short"
-            - "sethcore.com"
+            - "${PODPLAY_DOMAIN}"
         initialDelaySeconds: 10
         periodSeconds: 30
     
@@ -91,9 +91,9 @@ spec:
       image: localhost/podplay-mail-debian:latest
       env:
         - name: MAIL_DOMAIN
-          value: "sethcore.com"
+          value: "${PODPLAY_DOMAIN}"
         - name: MAIL_SERVER_NAME
-          value: "mail.sethcore.com"
+          value: "${PODPLAY_MAIL_SERVER_NAME}"
       volumeMounts:
         - name: certs
           mountPath: /data/certificates
@@ -104,13 +104,13 @@ spec:
           mountPath: /data/user-data
       ports:
         - containerPort: 25
-          hostPort: 25
+          hostPort: ${PODPLAY_HOST_SMTP_PORT}
           protocol: TCP
         - containerPort: 587
-          hostPort: 587
+          hostPort: ${PODPLAY_HOST_SUBMISSION_PORT}
           protocol: TCP
         - containerPort: 993
-          hostPort: 993
+          hostPort: ${PODPLAY_HOST_IMAPS_PORT}
           protocol: TCP
       livenessProbe:
         tcpSocket:

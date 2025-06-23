@@ -11,19 +11,19 @@ spec:
   volumes:
     - name: certs
       persistentVolumeClaim:
-        claimName: podplay-certs
+        claimName: certs
     - name: logs
       persistentVolumeClaim:
-        claimName: podplay-logs
+        claimName: logs
   
   containers:
     - name: certbot
       image: localhost/podplay-certbot-debian:latest
       env:
         - name: CERT_TYPE
-          value: "letsencrypt"  # or "self-signed"
+          value: "letsencrypt"
         - name: DOMAIN
-          value: "lab.sethlakowske.com"
+          value: "sethcore.com"
         - name: EMAIL
           value: "lakowske@gmail.com"
         - name: STAGING
@@ -35,7 +35,7 @@ spec:
           mountPath: /data/logs
       ports:
         - containerPort: 80
-          hostPort: 8080
+          hostPort: 80
           protocol: TCP
       securityContext:
         runAsUser: 0  # Required for Let's Encrypt
