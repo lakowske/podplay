@@ -231,3 +231,6 @@ Thumbs.db
 debian/pod-yaml/podplay-init-pod.yaml
 debian/pod-yaml/podplay-pod.yaml
 debian/pod-yaml/podplay-renewal-pod.yaml
+
+# Secrets directory
+secrets/
