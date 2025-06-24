@@ -63,7 +63,7 @@ spec:
         - name: DOMAIN_NAME
           value: "sethcore.com"
         - name: DOMAIN_IP
-          value: "127.0.0.1"
+          value: "204.44.100.3"
         - name: DNS_FORWARDERS
           value: "8.8.8.8; 8.8.4.4; 1.1.1.1; 1.0.0.1"
       volumeMounts:
