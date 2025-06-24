@@ -4,6 +4,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load CSRF token for forms
     loadCSRFToken();
     
+    // Setup dynamic domain selection
+    setupDynamicDomain();
+    
     // Setup form validation
     setupFormValidation();
 });
@@ -26,6 +29,31 @@ function loadCSRFToken() {
                     // Generate a fallback token (not secure, but better than nothing)
                     csrfInput.value = 'fallback-' + Date.now() + '-' + Math.random().toString(36);
                 });
+        }
+    });
+}
+
+function setupDynamicDomain() {
+    // Get current domain from hostname and update domain selectors and placeholders
+    const currentDomain = window.location.hostname;
+    
+    // Update domain select options
+    const domainSelect = document.querySelector('select[name="domain"]');
+    if (domainSelect) {
+        // Clear existing options and add current domain
+        domainSelect.innerHTML = '';
+        const option = document.createElement('option');
+        option.value = currentDomain;
+        option.textContent = currentDomain;
+        option.selected = true;
+        domainSelect.appendChild(option);
+    }
+    
+    // Update email placeholders with current domain
+    const emailInputs = document.querySelectorAll('input[placeholder*="@"]');
+    emailInputs.forEach(input => {
+        if (input.placeholder.includes('@lab.sethlakowske.com')) {
+            input.placeholder = input.placeholder.replace('@lab.sethlakowske.com', `@${currentDomain}`);
         }
     });
 }

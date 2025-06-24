@@ -77,7 +77,7 @@ def confirm_main():
         user_data = pending_data['user_data']
         user_email = user_data['email']
         user_domain = user_email.split('@')[1]
-        mail_domain = "lab.sethlakowske.com"
+        mail_domain = os.environ.get('DOMAIN', 'localhost')
         
         logger.log_info(
             f"Processing confirmation for user: {user_email}",

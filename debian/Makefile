@@ -1,4 +1,4 @@
-.PHONY: all base apache bind mail certbot clean help volumes clean-volumes test-logging run-examples
+.PHONY: all base apache bind mail certbot clean clean-base clean-apache clean-bind clean-mail clean-certbot help volumes clean-volumes test-logging run-examples
 .PHONY: pod-init pod-up pod-down pod-status pod-logs pod-renewal pod-cert-cleanup
 .PHONY: user-add user-remove user-list user-test user-reload
 .PHONY: test-auth test-auth-clean
@@ -56,6 +56,26 @@ clean:
 	podman rmi podplay-mail-debian:latest || true
 	podman rmi podplay-certbot-debian:latest || true
 	podman rmi base-debian:latest || true
+
+clean-base:
+	@echo "Removing base image..."
+	podman rmi base-debian:latest || true
+
+clean-apache:
+	@echo "Removing Apache image..."
+	podman rmi podplay-apache-debian:latest || true
+
+clean-bind:
+	@echo "Removing DNS image..."
+	podman rmi podplay-bind-debian:latest || true
+
+clean-mail:
+	@echo "Removing mail image..."
+	podman rmi podplay-mail-debian:latest || true
+
+clean-certbot:
+	@echo "Removing certificate image..."
+	podman rmi podplay-certbot-debian:latest || true
 
 # Testing and examples
 test-logging: volumes
@@ -352,4 +372,9 @@ help:
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  clean        - Remove all Debian images"
+	@echo "  clean-base   - Remove base image only"
+	@echo "  clean-apache - Remove Apache image only"
+	@echo "  clean-bind   - Remove DNS image only"
+	@echo "  clean-mail   - Remove mail image only"
+	@echo "  clean-certbot - Remove certificate image only"
 	@echo "  help         - Show this help message"

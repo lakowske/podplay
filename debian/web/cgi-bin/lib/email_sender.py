@@ -1,6 +1,7 @@
 import smtplib
 import ssl
 import logging
+import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pathlib import Path
@@ -22,7 +23,9 @@ class EmailSender:
         self.smtp_port = 25  # Use standard SMTP port
         self.smtp_user = None  # Try without authentication first
         self.smtp_password = None
-        self.from_addr = "PodPlay System <noreply@lab.sethlakowske.com>"
+        # Get domain from environment variable
+        domain = os.environ.get('DOMAIN', 'localhost')
+        self.from_addr = f"PodPlay System <noreply@{domain}>"
         self.template_dir = Path("/var/www/templates/emails")
     
     def send_confirmation_email(self, to_email, username, confirmation_url):
@@ -87,10 +90,11 @@ The PodPlay Team
 </html>"""
             
             # Replace placeholders
+            domain = os.environ.get('DOMAIN', 'localhost')
             replacements = {
                 '{username}': username,
                 '{confirmation_url}': confirmation_url,
-                '{domain}': 'lab.sethlakowske.com'
+                '{domain}': domain
             }
             
             text_content = text_template

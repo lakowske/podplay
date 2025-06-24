@@ -1,4 +1,4 @@
-.PHONY: help clean all base apache bind mail certbot volumes pod-init pod-cert-cleanup pod-up pod-down pod-status pod-logs auth-cli-install auth-cli-bootstrap auth-cli-test auth-cli-test-quick auth-logs-monitor auth-logs-check
+.PHONY: help clean clean-base clean-apache clean-bind clean-mail clean-certbot all base apache bind mail certbot volumes pod-init pod-cert-cleanup pod-up pod-down pod-status pod-logs auth-cli-install auth-cli-bootstrap auth-cli-test auth-cli-test-quick auth-logs-monitor auth-logs-check
 
 # Main build targets
 all:
@@ -77,6 +77,21 @@ auth-logs-check:
 clean:
 	$(MAKE) -C debian clean
 
+clean-base:
+	$(MAKE) -C debian clean-base
+
+clean-apache:
+	$(MAKE) -C debian clean-apache
+
+clean-bind:
+	$(MAKE) -C debian clean-bind
+
+clean-mail:
+	$(MAKE) -C debian clean-mail
+
+clean-certbot:
+	$(MAKE) -C debian clean-certbot
+
 clean-volumes:
 	$(MAKE) -C debian clean-volumes
 
@@ -114,4 +129,10 @@ help:
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  clean              - Remove all images"
+	@echo "  clean-base         - Remove base image only"
+	@echo "  clean-apache       - Remove Apache image only"
+	@echo "  clean-bind         - Remove DNS image only"
+	@echo "  clean-mail         - Remove mail image only"
+	@echo "  clean-certbot      - Remove certificate image only"
+	@echo "  clean-volumes      - Remove all volumes (WARNING: destroys data)"
 	@echo "  help               - Show this help message"

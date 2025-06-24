@@ -1,4 +1,4 @@
-#!/data/.venv/bin/python3
+#!/usr/bin/env python3
 """
 Improved authentication CGI script with comprehensive error handling and logging
 """
@@ -67,7 +67,7 @@ def auth_main():
     # Get and validate credentials
     username = form.getvalue('username', '').strip()
     password = form.getvalue('password', '')
-    domain = form.getvalue('domain', 'lab.sethlakowske.com').strip()
+    domain = form.getvalue('domain', os.environ.get('DOMAIN', 'localhost')).strip()
     
     # Input validation
     if not username:

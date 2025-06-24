@@ -70,7 +70,8 @@ def main():
             yaml.dump(pending_data, f)
         
         # Send reset email
-        reset_url = f"https://lab.sethlakowske.com/auth/reset-password.html?token={token}"
+        domain = os.environ.get('DOMAIN', 'localhost')
+        reset_url = f"https://{domain}/auth/reset-password.html?token={token}"
         email_sent = email_sender.send_reset_email(email, user_info['username'], reset_url)
         
         if email_sent:

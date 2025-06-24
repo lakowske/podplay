@@ -260,7 +260,8 @@ def main():
             # Continue anyway - this is just a timing optimization
         
         # Send confirmation email
-        confirmation_url = f"https://lab.sethlakowske.com/cgi-bin/confirm.py?token={token}"
+        domain = os.environ.get('DOMAIN', 'localhost')
+        confirmation_url = f"https://{domain}/cgi-bin/confirm.py?token={token}"
         
         try:
             email_sent = email_sender.send_confirmation_email(email, username, confirmation_url)
