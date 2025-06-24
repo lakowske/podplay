@@ -29,6 +29,22 @@ webmail IN      CNAME   mail.${DOMAIN_NAME}.
 imap    IN      CNAME   mail.${DOMAIN_NAME}.
 smtp    IN      CNAME   mail.${DOMAIN_NAME}.
 
-; TXT records for mail authentication (examples)
-@       IN      TXT     "v=spf1 mx ~all"
-_dmarc  IN      TXT     "v=DMARC1; p=quarantine; rua=mailto:admin@${DOMAIN_NAME}"
+; TXT records for mail authentication
+; SPF - Sender Policy Framework (who can send mail for this domain)
+@       IN      TXT     "v=spf1 ip4:${DOMAIN_IP} mx -all"
+
+; DMARC - Domain-based Message Authentication, Reporting & Conformance
+_dmarc  IN      TXT     "v=DMARC1; p=quarantine; rua=mailto:admin@${DOMAIN_NAME}; ruf=mailto:admin@${DOMAIN_NAME}; pct=100; sp=quarantine"
+
+; DKIM placeholder - Domain Keys Identified Mail (requires mail server configuration)
+; default._domainkey IN TXT "v=DKIM1; k=rsa; p=YOUR_PUBLIC_KEY_HERE"
+; Note: DKIM requires generating keys in the mail server and adding the public key here
+
+; Additional mail-related records
+; Autodiscover for mail clients
+_autodiscover._tcp IN SRV 0 0 443 mail.${DOMAIN_NAME}.
+autoconfig     IN      CNAME   mail.${DOMAIN_NAME}.
+autodiscover   IN      CNAME   mail.${DOMAIN_NAME}.
+
+; Reverse DNS note - PTR record (configured at VPS provider, not here)
+; ${DOMAIN_IP} PTR mail.${DOMAIN_NAME}.
