@@ -1,4 +1,5 @@
 # Postfix main configuration for Debian virtual domains
+compatibility_level = 2
 smtpd_banner = $myhostname ESMTP
 biff = no
 append_dot_mydomain = no
@@ -31,10 +32,13 @@ smtpd_tls_auth_only = no
 smtp_tls_security_level=may
 smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
 
-# SASL authentication via Dovecot
+# SASL authentication via Dovecot and relay restrictions
 smtpd_sasl_type = dovecot
 smtpd_sasl_path = private/auth
 smtpd_sasl_auth_enable = yes
+
+# Modern relay restrictions (compatibility_level >= 1)
+smtpd_relay_restrictions = permit_mynetworks,permit_sasl_authenticated,reject_unauth_destination
 smtpd_recipient_restrictions = permit_sasl_authenticated,permit_mynetworks,reject_unauth_destination
 
 # Virtual mailbox configuration using user-data structure

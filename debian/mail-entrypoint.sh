@@ -82,27 +82,53 @@ setup_user_management() {
     
     # Create default user configuration if none exists
     if [ ! -f /data/user-data/config/users.yaml ]; then
+        echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Creating initial user configuration with hashed passwords..."
+        
+        # Create minimal initial structure
         cat > /data/user-data/config/users.yaml << EOF
 version: "1.0"
-domains:
-  - name: "${MAIL_DOMAIN}"
-    users:
-      - username: "admin"
-        password: "password"
-        aliases: ["postmaster", "hostmaster", "root"]
-        quota: "1G"
-        enabled: true
-        services: ["mail"]
-test_users:
-  - username: "test1"
-    password: "password1"
-    domain: "${MAIL_DOMAIN}"
-    quota: "50M"
-    services: ["mail"]
+domains: []
+test_users: []
 EOF
-        # Set ownership immediately after creation for Apache container access
+        
+        # Set ownership for Apache container access
         chown 33:33 /data/user-data/config/users.yaml
         chmod 664 /data/user-data/config/users.yaml
+        
+        # Use user_manager.py to properly add admin user with hashed password
+        echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Adding default admin user with hashed password..."
+        /data/.venv/bin/python /data/src/user_manager.py \
+            --add-user \
+            --user "admin" \
+            --password "password" \
+            --domain "${MAIL_DOMAIN}" \
+            --quota "1G" \
+            --confirm-email \
+            --services "mail" \
+            >> /data/logs/mail/user-reload.log 2>&1
+        
+        if [ $? -eq 0 ]; then
+            echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Default admin user created successfully with hashed password"
+        else
+            echo "[$(date -Iseconds)] [ERROR] [MAIL] [INIT]: Failed to create default admin user"
+        fi
+        
+        # Add test user with hashed password
+        echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Adding default test user with hashed password..."
+        /data/.venv/bin/python /data/src/user_manager.py \
+            --add-user \
+            --user "test1" \
+            --password "password1" \
+            --domain "${MAIL_DOMAIN}" \
+            --quota "50M" \
+            --services "mail" \
+            >> /data/logs/mail/user-reload.log 2>&1
+        
+        if [ $? -eq 0 ]; then
+            echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Default test user created successfully with hashed password"
+        else
+            echo "[$(date -Iseconds)] [ERROR] [MAIL] [INIT]: Failed to create default test user"
+        fi
     fi
     
     # Create default quota configuration

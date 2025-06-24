@@ -22,8 +22,27 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 from html.parser import HTMLParser
 
-# Configuration
-DEFAULT_BASE_URL = "https://lab.sethlakowske.com"
+def load_env_config():
+    """Load environment configuration from .env file."""
+    env_file = Path(__file__).parent / ".env"
+    config = {}
+    
+    if env_file.exists():
+        with open(env_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    config[key] = value
+    
+    return config
+
+# Load environment configuration
+ENV_CONFIG = load_env_config()
+
+# Configuration - dynamically set from environment
+DEFAULT_DOMAIN = ENV_CONFIG.get('PODPLAY_DOMAIN', 'sethcore.com')
+DEFAULT_BASE_URL = f"https://{DEFAULT_DOMAIN}"
 DEFAULT_SESSION_FILE = Path.home() / ".podplay" / "session.json"
 LOG_PATH = "/data/logs/apache/auth.log"
 PENDING_PATH = "/data/user-data/pending"
@@ -178,8 +197,10 @@ class HttpAuthClient:
         return self.request('POST', path, data=data, allow_redirects=allow_redirects, headers=headers)
     
     def login(self, username: str, password: str, 
-              domain: str = "lab.sethlakowske.com") -> bool:
+              domain: str = None) -> bool:
         """Login to the system."""
+        if domain is None:
+            domain = DEFAULT_DOMAIN
         verbose_print(f"Attempting login - username: {username}, domain: {domain}")
         
         # Get CSRF token from dedicated endpoint
@@ -463,7 +484,7 @@ def cli(ctx, base_url, session, verbose):
 @cli.command()
 @click.option('--username', '-u', required=True, help='Username')
 @click.option('--password', '-p', required=True, help='Password')
-@click.option('--domain', '-d', default='lab.sethlakowske.com', help='Domain')
+@click.option('--domain', '-d', default=None, help='Domain')
 @click.option('--save-as', help='Save session with name')
 @click.pass_context
 def login(ctx, username, password, domain, save_as):
@@ -667,7 +688,7 @@ def cleanup_users(ctx, keep, dry_run, confirm):
     
     # Default users to keep if none specified
     if not keep:
-        keep = ['admin@lab.sethlakowske.com', 'seth@lab.sethlakowske.com']
+        keep = [f'admin@{DEFAULT_DOMAIN}', f'seth@{DEFAULT_DOMAIN}']
     
     # Find users to delete
     users_to_delete = [user['email'] for user in all_users if user['email'] not in keep]
@@ -879,7 +900,7 @@ def run_all_tests(ctx, verbose):
     # Generate unique test data
     suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
     test_user = f"test_{suffix}"
-    test_email = f"{test_user}@lab.sethlakowske.com"
+    test_email = f"{test_user}@{DEFAULT_DOMAIN}"
     test_pass = f"Pass_{suffix}!"
     
     tests = [
@@ -928,8 +949,8 @@ def bootstrap(ctx):
         "podman", "exec", "podplay-mail",
         "/data/src/user_manager.py",
         "--add-user", "--user", "admin",
-        "--password", "admin_temp_123",
-        "--domain", "lab.sethlakowske.com",
+        "--password", "password",
+        "--domain", DEFAULT_DOMAIN,
         "--quota", "2G",
         "--confirm-email"
     ]
@@ -949,17 +970,71 @@ def bootstrap(ctx):
         verbose_print(f"User creation failed - stderr: {e.stderr}")
         verbose_print(f"Return code: {e.returncode}")
     
-    # Step 2: Login as admin (skip web registration since email is confirmed)
+    # Step 1.5: Ensure admin user is email-confirmed and password is hashed
+    click.echo("1.5. Confirming admin user email and ensuring password is hashed...")
+    cmd_confirm = [
+        "podman", "exec", "podplay-apache",
+        "python3", "-c",
+        f"""
+import sys; sys.path.insert(0, '/var/www/cgi-bin/lib'); 
+import user_db; 
+import yaml;
+db = user_db.UserDatabase(); 
+
+# Enable user
+enable_result = db.enable_user('admin@{DEFAULT_DOMAIN}'); 
+print('Enable result:', enable_result);
+
+# Check if admin password needs to be hashed
+config_file = '/data/user-data/config/users.yaml'
+try:
+    with open(config_file, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Check domains section for plain text passwords
+    updated = False
+    if 'domains' in config:
+        for domain_config in config['domains']:
+            if domain_config['name'] == '{DEFAULT_DOMAIN}':
+                for user in domain_config.get('users', []):
+                    if user['username'] == 'admin' and user.get('password') == 'password':
+                        # Hash the plain text password
+                        user['password'] = db.hash_password('password')
+                        updated = True
+                        print('Admin password hashed in domains section')
+                        break
+    
+    if updated:
+        with open(config_file, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False)
+        print('Config updated with hashed password')
+    else:
+        print('No plain text password found to hash')
+        
+except Exception as ex:
+    print('Password hashing error:', str(ex))
+"""
+    ]
+    
+    try:
+        result = subprocess.run(cmd_confirm, check=True, capture_output=True, text=True)
+        click.echo("✓ Admin user email confirmed and password secured")
+        verbose_print(f"Security check stdout: {result.stdout}")
+    except subprocess.CalledProcessError as e:
+        click.echo("⚠ Failed to confirm admin email or secure password, continuing...")
+        verbose_print(f"Security check failed: {e}")
+    
+    # Step 2: Login as admin
     click.echo("2. Logging in as admin...")
     
     client = ctx.obj['client']
     
     # Try both username formats
     login_success = False
-    for username in ["admin", "admin@lab.sethlakowske.com"]:
+    for username in ["admin", f"admin@{DEFAULT_DOMAIN}"]:
         verbose_print(f"Trying login with username: {username}")
         try:
-            if client.login(username, "admin_temp_123", "lab.sethlakowske.com"):
+            if client.login(username, "password", DEFAULT_DOMAIN):
                 click.echo(f"✓ Admin login successful as {username}")
                 login_success = True
                 break

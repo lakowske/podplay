@@ -1,4 +1,5 @@
 # Postfix main configuration
+compatibility_level = 2
 smtpd_banner = $myhostname ESMTP
 biff = no
 append_dot_mydomain = no
@@ -28,12 +29,14 @@ smtpd_tls_session_cache_database = btree:${data_directory}/smtpd_scache
 smtp_tls_security_level=may
 smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
 
-# SASL authentication
+# SASL authentication and relay restrictions
 smtpd_sasl_type = dovecot
 smtpd_sasl_path = private/auth
 smtpd_sasl_auth_enable = yes
+
+# Modern relay restrictions (compatibility_level >= 1)
+smtpd_relay_restrictions = permit_mynetworks,permit_sasl_authenticated,defer_unauth_destination
 smtpd_recipient_restrictions = permit_sasl_authenticated,permit_mynetworks,reject_unauth_destination
 
 # Simple local delivery for testing
-local_recipient_maps = 
-mydestination = $myhostname, localhost.$mydomain, localhost, $mydomain
+local_recipient_maps =
