@@ -1,9 +1,30 @@
 #!/bin/bash
 set -e
 
-# Set default environment variables
-export MAIL_SERVER_NAME=${MAIL_SERVER_NAME:-"lab.sethlakowske.com"}
-export MAIL_DOMAIN=${MAIL_DOMAIN:-"lab.sethlakowske.com"}
+# Validate required environment variables
+validate_environment() {
+    local missing_vars=()
+    
+    if [ -z "$MAIL_SERVER_NAME" ]; then
+        missing_vars+=("MAIL_SERVER_NAME")
+    fi
+    
+    if [ -z "$MAIL_DOMAIN" ]; then
+        missing_vars+=("MAIL_DOMAIN")
+    fi
+    
+    if [ ${#missing_vars[@]} -gt 0 ]; then
+        echo "[$(date -Iseconds)] [ERROR] [MAIL] [INIT]: Required environment variables not set: ${missing_vars[*]}"
+        echo "[$(date -Iseconds)] [ERROR] [MAIL] [INIT]: Mail container requires MAIL_SERVER_NAME and MAIL_DOMAIN to be explicitly set"
+        echo "[$(date -Iseconds)] [ERROR] [MAIL] [INIT]: Exiting due to missing configuration"
+        exit 1
+    fi
+}
+
+# Call validation first
+validate_environment
+
+# Set SSL certificate paths based on validated domain
 export SSL_CERT_FILE=${SSL_CERT_FILE:-"/data/certificates/$MAIL_DOMAIN/fullchain.pem"}
 export SSL_KEY_FILE=${SSL_KEY_FILE:-"/data/certificates/$MAIL_DOMAIN/privkey.pem"}
 export SSL_CHAIN_FILE=${SSL_CHAIN_FILE:-"/data/certificates/$MAIL_DOMAIN/fullchain.pem"}
@@ -13,9 +34,11 @@ setup_logging() {
     echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Initializing mail dual logging..."
     
     # Ensure log files exist with proper permissions
-    touch /data/logs/mail/{postfix,dovecot,dovecot-info,auth}.log
-    chown postfix:loggroup /data/logs/mail/postfix.log
+    touch /data/logs/mail/{postfix,dovecot,dovecot-info,auth,supervisord,health-monitor}.log
+    touch /data/logs/mail/{postfix-error,dovecot-error,cert-reload,cert-reload-error,user-reload,user-reload-error,health-monitor-error}.log
+    chown postfix:loggroup /data/logs/mail/postfix*.log
     chown dovecot:loggroup /data/logs/mail/dovecot*.log /data/logs/mail/auth.log
+    chown root:loggroup /data/logs/mail/{supervisord,health-monitor,cert-reload,user-reload}*.log
     chmod 644 /data/logs/mail/*.log
     
     echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Mail logging initialized"
@@ -76,10 +99,6 @@ setup_user_management() {
     # Create user-data directory structure
     mkdir -p /data/user-data/{config,users,shared/{public,templates,admin/{user-backups,migration-tools}}}
     
-    # IMPORTANT: Cross-container permissions strategy
-    # The Apache container (www-data, UID 33) needs write access to users.yaml for registration
-    # The Mail container creates these files but must set ownership for Apache access
-    
     # Create default user configuration if none exists
     if [ ! -f /data/user-data/config/users.yaml ]; then
         echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Creating initial user configuration with hashed passwords..."
@@ -100,11 +119,10 @@ EOF
         /data/.venv/bin/python /data/src/user_manager.py \
             --add-user \
             --user "admin" \
-            --password "password" \
+            --password "changeme123" \
             --domain "${MAIL_DOMAIN}" \
             --quota "1G" \
-            --confirm-email \
-            --services "mail" \
+            --services "mail,www,files" \
             >> /data/logs/mail/user-reload.log 2>&1
         
         if [ $? -eq 0 ]; then
@@ -113,8 +131,7 @@ EOF
             echo "[$(date -Iseconds)] [ERROR] [MAIL] [INIT]: Failed to create default admin user"
         fi
         
-        # Add test user with hashed password
-        echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Adding default test user with hashed password..."
+        # Add default test user
         /data/.venv/bin/python /data/src/user_manager.py \
             --add-user \
             --user "test1" \
@@ -131,94 +148,25 @@ EOF
         fi
     fi
     
-    # Create default quota configuration
-    if [ ! -f /data/user-data/config/quotas.yaml ]; then
-        cat > /data/user-data/config/quotas.yaml << EOF
-default_quotas:
-  test_users: "50M"
-  regular_users: "500M"
-  admin_users: "2G"
-
-service_quotas:
-  mail: "50%"
-  files: "30%"
-  git: "15%"
-  www: "5%"
-
-monitoring:
-  warning_threshold: 80
-  critical_threshold: 95
-  cleanup_threshold: 98
-EOF
-        # Set ownership immediately after creation
-        chown 33:33 /data/user-data/config/quotas.yaml
-        chmod 664 /data/user-data/config/quotas.yaml
-    fi
-    
     # Set proper ownership and permissions for cross-container access
     chown -R vmail:vmail /data/user-data/users
-    
-    # Set permissions for config files to allow Apache container (www-data) to modify them
-    # The Apache and Mail containers share the user-data volume, so we need shared access
     chmod 775 /data/user-data/config
     
     # Set specific permissions for user configuration files
     if [ -f /data/user-data/config/users.yaml ]; then
-        # Allow www-data (UID 33) from Apache container to read/write
         chown 33:33 /data/user-data/config/users.yaml
         chmod 664 /data/user-data/config/users.yaml
-    fi
-    
-    if [ -f /data/user-data/config/quotas.yaml ]; then
-        chown 33:33 /data/user-data/config/quotas.yaml  
-        chmod 664 /data/user-data/config/quotas.yaml
     fi
     
     echo "[$(date -Iseconds)] [INFO] [MAIL] [USER-MANAGER]: User data structure initialized"
 }
 
-# Start user management daemon
-start_user_manager() {
-    echo "[$(date -Iseconds)] [INFO] [MAIL] [USER-MANAGER]: Starting user configuration hot-reload monitor..."
-    
-    # Start user manager in background
-    /data/.venv/bin/python /data/src/user_manager.py \
-        --hot-reload \
-        --watch /data/user-data/config/ \
-        --service-type mail \
-        --domain "$MAIL_DOMAIN" \
-        >> /data/logs/mail/user-reload.log 2>&1 &
-    
-    USER_MANAGER_PID=$!
-    echo $USER_MANAGER_PID > /tmp/user-manager.pid
-    echo "[$(date -Iseconds)] [INFO] [MAIL] [USER-MANAGER]: Monitor started (PID: $USER_MANAGER_PID)"
-}
-
-# Initialize user management
+# Call user management setup
 setup_user_management
 
-# Generate initial user configuration files
+# Generate initial service configuration files
 echo "[$(date -Iseconds)] [INFO] [MAIL] [USER-MANAGER]: Generating initial service configuration files..."
-
-# Use debug logging if requested
-if [ "${PODPLAY_LOG_LEVEL}" = "DEBUG" ] || [ "${PODPLAY_MAIL_LOG_LEVEL}" = "DEBUG" ]; then
-    export PODPLAY_USER_LOG_LEVEL=DEBUG
-fi
-
-# Generate initial configurations
-/data/.venv/bin/python /data/src/user_manager.py \
-    --generate-initial \
-    --watch /data/user-data/config/users.yaml \
-    --service-type mail \
-    --domain "$MAIL_DOMAIN" \
-    2>&1 | tee /tmp/user-config-init.log
-
-# Verify configuration files were created
-if [ ! -f /etc/postfix/vmailbox ] || [ ! -f /etc/dovecot/passwd ]; then
-    echo "[$(date -Iseconds)] [ERROR] [MAIL] [USER-MANAGER]: Failed to generate initial configuration files"
-    exit 1
-fi
-
+/data/.venv/bin/python /data/src/user_manager.py --generate-initial --service-type mail
 echo "[$(date -Iseconds)] [INFO] [MAIL] [USER-MANAGER]: Initial configuration files generated"
 
 echo ""
@@ -230,77 +178,28 @@ echo "  - User management: Dynamic configuration from /data/user-data/config/use
 echo "  - Default users: admin@$MAIL_DOMAIN, test1@$MAIL_DOMAIN"
 echo ""
 
-# Start Postfix
-echo "Starting Postfix..."
-service postfix start
-
-# Start Dovecot with Debian configuration
-echo "Starting Dovecot..."
-service dovecot start
-
-# Function to tail and redirect logs for dual logging
-tail_mail_logs() {
-    echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Starting dual logging for mail services..."
-    
-    # Tail Dovecot info logs (where LMTP activity is logged)
-    if [ -f /var/log/dovecot-info.log ]; then
-        tail -F /var/log/dovecot-info.log 2>/dev/null | while IFS= read -r line; do
-            timestamp=$(date -Iseconds)
-            structured_line="[$timestamp] [INFO] [MAIL] [DOVECOT]: $line"
-            echo "$structured_line"
-            echo "$structured_line" >> /data/logs/mail/dovecot-info.log
-        done &
-    fi
-    
-    # Tail Dovecot main logs
-    if [ -f /var/log/dovecot.log ]; then
-        tail -F /var/log/dovecot.log 2>/dev/null | while IFS= read -r line; do
-            timestamp=$(date -Iseconds)
-            structured_line="[$timestamp] [INFO] [MAIL] [DOVECOT]: $line"
-            echo "$structured_line"
-            echo "$structured_line" >> /data/logs/mail/dovecot.log
-        done &
-    fi
-    
-    # Monitor Postfix queue for activity
-    while true; do
-        sleep 5
-        queue_status=$(postqueue -p 2>/dev/null)
-        if [ "$queue_status" != "Mail queue is empty" ]; then
-            timestamp=$(date -Iseconds)
-            structured_line="[$timestamp] [INFO] [MAIL] [POSTFIX]: Queue activity detected"
-            echo "$structured_line"
-            echo "$structured_line" >> /data/logs/mail/postfix.log
-        fi
-    done &
+# Final system status verification
+final_system_check() {
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Starting supervisord to manage mail services..."
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: All services will be monitored and auto-restarted by supervisord"
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Check service status with: supervisorctl status"
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: View service logs in: /data/logs/mail/"
 }
 
-# Start certificate monitoring daemon
-start_certificate_monitor() {
-    echo "[$(date -Iseconds)] [INFO] [MAIL] [CERT-MONITOR]: Starting certificate hot-reload monitor..."
-    
-    # Start certificate monitor in background
-    /data/src/cert_manager.py \
-        --hot-reload \
-        --service-type mail \
-        --domain "$MAIL_DOMAIN" \
-        /data/certificates/ \
-        >> /data/logs/mail/cert-reload.log 2>&1 &
-    
-    CERT_MONITOR_PID=$!
-    echo $CERT_MONITOR_PID > /tmp/cert-monitor.pid
-    echo "[$(date -Iseconds)] [INFO] [MAIL] [CERT-MONITOR]: Monitor started (PID: $CERT_MONITOR_PID)"
+# Run final verification
+final_system_check
+
+# Set up signal traps for graceful shutdown
+trap_signals() {
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [SHUTDOWN]: Received shutdown signal, stopping supervisord..."
+    supervisorctl shutdown
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [SHUTDOWN]: Mail container shutdown complete"
+    exit 0
 }
 
-# Start certificate monitor
-start_certificate_monitor
+# Set up signal traps
+trap trap_signals SIGTERM SIGINT
 
-# Start user manager
-start_user_manager
-
-# Keep container running and show logs
-echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Mail services started successfully with certificate and user hot-reload!"
-tail_mail_logs
-
-# Keep the container running
-tail -f /dev/null
+# Start supervisord (this will manage all our services)
+echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Starting supervisord with mail service management..."
+exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf

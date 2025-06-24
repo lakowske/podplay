@@ -22,6 +22,16 @@
 - **Note**: Non-privileged users are allowed to bind to these host ports on this VPS
 - No port forwarding is needed as the VPS has a direct public IP
 
+### mail.sethlakowske.com (OVH VPS - Mail-focused)
+- **Direct Port Binding**: This is an OVH VPS optimized for mail services with proper PTR record support
+- **Container Host Bindings**:
+  - Web services: Use `-p 80:80 -p 443:443` for Apache/HTTP services
+  - Certificate services: Use `-p 80:80` for Let's Encrypt validation (certbot container)
+  - Mail services: Use `-p 25:25 -p 587:587 -p 993:993` for SMTP, submission, and IMAPS
+- **IP Address**: 15.204.246.37
+- **Note**: This VPS has better PTR record support, making it ideal for mail server deployment
+- No port forwarding is needed as the VPS has a direct public IP
+
 ## Best Practices
 
 ### Container Volumes

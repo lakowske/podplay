@@ -186,7 +186,7 @@ env-check:
 env-switch:
 	@if [ -z "$(ENV)" ]; then \
 		echo "Error: ENV parameter required"; \
-		echo "Usage: make env-switch ENV=lab|sethcore"; \
+		echo "Usage: make env-switch ENV=lab|sethcore|ovh"; \
 		exit 1; \
 	fi
 	@if [ ! -f ".env.$(ENV)" ]; then \
