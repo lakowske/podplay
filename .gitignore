@@ -14,7 +14,10 @@ dist/
 downloads/
 eggs/
 .eggs/
+# Python packaging lib/ directories (but allow authentication lib/ directories)
 lib/
+!debian/*/lib/
+!*/cgi-bin/lib/
 lib64/
 parts/
 sdist/
