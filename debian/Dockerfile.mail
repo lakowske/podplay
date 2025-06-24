@@ -23,17 +23,17 @@ RUN usermod -a -G certgroup,loggroup postfix && \
     usermod -a -G certgroup,loggroup vmail && \
     mkdir -p /var/mail/vhosts
 
-# Generate DH parameters for Dovecot
+# Create directories following Debian mail conventions
+RUN mkdir -p /var/spool/mail/vhosts /var/spool/postfix/private /etc/postfix /var/log /etc/ssl/certs/dovecot /etc/ssl/dovecot
+
+# Generate DH parameters for Dovecot (EARLY to preserve cache from config changes)
 RUN openssl dhparam -out /etc/dovecot/dh.pem 2048
 
-# Copy configuration files
+# Copy configuration files (after DH generation - changes won't invalidate DH cache)
 COPY debian/mail-config/postfix-main.cf /etc/postfix/main.cf.template
 COPY debian/mail-config/master.cf /etc/postfix/master.cf
 COPY debian/mail-config/dovecot.conf /etc/dovecot/dovecot.conf
 COPY debian/mail-config/supervisord.conf /etc/supervisor/conf.d/mail.conf
-
-# Create directories following Debian mail conventions
-RUN mkdir -p /var/spool/mail/vhosts /var/spool/postfix/private /etc/postfix /var/log /etc/ssl/certs/dovecot /etc/ssl/dovecot
 
 # Copy entrypoint and health monitor scripts
 COPY debian/mail-entrypoint.sh /usr/local/bin/

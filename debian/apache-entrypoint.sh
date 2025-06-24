@@ -22,7 +22,7 @@ setup_logging() {
     echo "[$(date -Iseconds)] [INFO] [APACHE] [INIT]: Initializing dual logging..."
     
     # Ensure log files exist with proper permissions
-    touch /data/logs/apache/{access,error,ssl}.log
+    touch /data/logs/apache/{access,error,ssl,cgi-errors}.log
     chown www-data:loggroup /data/logs/apache/*.log
     chmod 644 /data/logs/apache/*.log
     

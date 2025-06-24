@@ -137,6 +137,35 @@ make pod-logs         # View logs
 make pod-down         # Stop services
 ```
 
+### Image Build Optimization
+
+**IMPORTANT: Prefer using Docker layer cache for faster development**
+
+```bash
+# ✅ PREFERRED: Fast incremental builds (uses cache)
+make mail             # Rebuild only mail service
+make apache           # Rebuild only Apache service
+make bind             # Rebuild only DNS service
+make certbot          # Rebuild only certbot service
+
+# ✅ PREFERRED: Restart with specific image rebuild
+make pod-down && make mail && make pod-up
+
+# ❌ AVOID: Slow full rebuild (destroys all cache)
+make clean && make all    # Only use when starting completely fresh
+
+# ⚠️  WHEN TO USE CLEAN:
+# - Debugging mysterious build issues
+# - Storage space cleanup
+# - Major base image changes
+# - Corrupted image cache
+```
+
+**Performance Impact:**
+- **Incremental builds**: ~30 seconds (leverages cache)
+- **Clean builds**: ~3+ minutes (DH parameter generation + full rebuild)
+- **Docker layer cache**: Preserves expensive operations like `openssl dhparam`
+
 ## Troubleshooting and Logging
 
 ### Dual Logging Architecture
@@ -183,6 +212,19 @@ podman exec podplay-mail tail -20 /data/logs/mail/user-manager.log
 - Persistent logs provide detailed operational information
 - Authentication and user creation issues often span multiple log files
 - Always check both Apache and Mail logs for authentication workflows
+
+### User Authentication & Login
+
+**Working Test Credentials:**
+- **Admin User**: `admin@mail.sethlakowske.com` / `admin123`
+- **Debug User**: `debugadmin@mail.sethlakowske.com` / `admin123`
+- **Login URL**: `http://mail.sethlakowske.com/auth/login.html`
+- **Portal Access**: `http://mail.sethlakowske.com/portal/`
+
+**Authentication Requirements:**
+- Users must have `email_confirmed: true` to login
+- Use `--confirm-email` flag when creating users via CLI
+- Web registration includes email confirmation workflow
 
 ## Implementation Guidelines
 

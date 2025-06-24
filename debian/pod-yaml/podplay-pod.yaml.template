@@ -112,11 +112,6 @@ spec:
         - containerPort: 993
           hostPort: ${PODPLAY_HOST_IMAPS_PORT}
           protocol: TCP
-      livenessProbe:
-        tcpSocket:
-          port: 25
-        initialDelaySeconds: 30
-        periodSeconds: 10
 
   # Pod-level settings
   restartPolicy: Always
