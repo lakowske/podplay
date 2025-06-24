@@ -76,6 +76,10 @@ setup_user_management() {
     # Create user-data directory structure
     mkdir -p /data/user-data/{config,users,shared/{public,templates,admin/{user-backups,migration-tools}}}
     
+    # IMPORTANT: Cross-container permissions strategy
+    # The Apache container (www-data, UID 33) needs write access to users.yaml for registration
+    # The Mail container creates these files but must set ownership for Apache access
+    
     # Create default user configuration if none exists
     if [ ! -f /data/user-data/config/users.yaml ]; then
         cat > /data/user-data/config/users.yaml << EOF
@@ -96,6 +100,9 @@ test_users:
     quota: "50M"
     services: ["mail"]
 EOF
+        # Set ownership immediately after creation for Apache container access
+        chown 33:33 /data/user-data/config/users.yaml
+        chmod 664 /data/user-data/config/users.yaml
     fi
     
     # Create default quota configuration
@@ -117,11 +124,29 @@ monitoring:
   critical_threshold: 95
   cleanup_threshold: 98
 EOF
+        # Set ownership immediately after creation
+        chown 33:33 /data/user-data/config/quotas.yaml
+        chmod 664 /data/user-data/config/quotas.yaml
     fi
     
-    # Set proper ownership
+    # Set proper ownership and permissions for cross-container access
     chown -R vmail:vmail /data/user-data/users
-    chmod -R 755 /data/user-data/config
+    
+    # Set permissions for config files to allow Apache container (www-data) to modify them
+    # The Apache and Mail containers share the user-data volume, so we need shared access
+    chmod 775 /data/user-data/config
+    
+    # Set specific permissions for user configuration files
+    if [ -f /data/user-data/config/users.yaml ]; then
+        # Allow www-data (UID 33) from Apache container to read/write
+        chown 33:33 /data/user-data/config/users.yaml
+        chmod 664 /data/user-data/config/users.yaml
+    fi
+    
+    if [ -f /data/user-data/config/quotas.yaml ]; then
+        chown 33:33 /data/user-data/config/quotas.yaml  
+        chmod 664 /data/user-data/config/quotas.yaml
+    fi
     
     echo "[$(date -Iseconds)] [INFO] [MAIL] [USER-MANAGER]: User data structure initialized"
 }
