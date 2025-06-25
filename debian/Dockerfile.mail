@@ -12,19 +12,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     netcat-openbsd \
     net-tools \
     supervisor \
+    opendkim \
+    opendkim-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Add mail service users to certgroup and loggroup, create directories
 RUN usermod -a -G certgroup,loggroup postfix && \
     usermod -a -G certgroup,loggroup dovecot && \
     usermod -a -G certgroup,loggroup dovenull && \
+    usermod -a -G certgroup,loggroup opendkim && \
     groupadd -r vmail && \
     useradd -r -g vmail -d /var/mail/vhosts -s /usr/sbin/nologin vmail && \
     usermod -a -G certgroup,loggroup vmail && \
     mkdir -p /var/mail/vhosts
 
 # Create directories following Debian mail conventions
-RUN mkdir -p /var/spool/mail/vhosts /var/spool/postfix/private /etc/postfix /var/log /etc/ssl/certs/dovecot /etc/ssl/dovecot
+RUN mkdir -p /var/spool/mail/vhosts /var/spool/postfix/private /etc/postfix /var/log /etc/ssl/certs/dovecot /etc/ssl/dovecot /etc/opendkim/keys
 
 # Generate DH parameters for Dovecot (EARLY to preserve cache from config changes)
 RUN openssl dhparam -out /etc/dovecot/dh.pem 2048
@@ -34,6 +37,10 @@ COPY debian/mail-config/postfix-main.cf /etc/postfix/main.cf.template
 COPY debian/mail-config/master.cf /etc/postfix/master.cf
 COPY debian/mail-config/dovecot.conf /etc/dovecot/dovecot.conf
 COPY debian/mail-config/supervisord.conf /etc/supervisor/conf.d/mail.conf
+COPY debian/mail-config/opendkim.conf /etc/opendkim.conf
+COPY debian/mail-config/TrustedHosts /etc/opendkim/TrustedHosts
+COPY debian/mail-config/KeyTable /etc/opendkim/KeyTable
+COPY debian/mail-config/SigningTable /etc/opendkim/SigningTable
 
 # Copy entrypoint and health monitor scripts
 COPY debian/mail-entrypoint.sh /usr/local/bin/

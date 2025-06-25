@@ -34,10 +34,11 @@ setup_logging() {
     echo "[$(date -Iseconds)] [INFO] [MAIL] [INIT]: Initializing mail dual logging..."
     
     # Ensure log files exist with proper permissions
-    touch /data/logs/mail/{postfix,dovecot,dovecot-info,auth,supervisord,health-monitor}.log
-    touch /data/logs/mail/{postfix-error,dovecot-error,cert-reload,cert-reload-error,user-reload,user-reload-error,health-monitor-error}.log
+    touch /data/logs/mail/{postfix,dovecot,dovecot-info,auth,supervisord,health-monitor,opendkim}.log
+    touch /data/logs/mail/{postfix-error,dovecot-error,cert-reload,cert-reload-error,user-reload,user-reload-error,health-monitor-error,opendkim-error}.log
     chown postfix:loggroup /data/logs/mail/postfix*.log
     chown dovecot:loggroup /data/logs/mail/dovecot*.log /data/logs/mail/auth.log
+    chown opendkim:loggroup /data/logs/mail/opendkim*.log
     chown root:loggroup /data/logs/mail/{supervisord,health-monitor,cert-reload,user-reload}*.log
     chmod 644 /data/logs/mail/*.log
     
@@ -87,6 +88,57 @@ if [ -f "$SSL_CERT_FILE" ] && [ -f "$SSL_KEY_FILE" ]; then
 else
     echo "Warning: SSL certificates not found, running without TLS"
 fi
+
+# Setup DKIM key generation and configuration
+setup_dkim() {
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [DKIM]: Setting up DKIM authentication..."
+    
+    # Create DKIM key directory in persistent user-data volume (writable)
+    DKIM_DIR="/data/user-data/dkim/${MAIL_DOMAIN}"
+    mkdir -p "${DKIM_DIR}"
+    
+    # Generate DKIM keys if they don't exist
+    if [ ! -f "${DKIM_DIR}/default.private" ]; then
+        echo "[$(date -Iseconds)] [INFO] [MAIL] [DKIM]: Generating DKIM keys for ${MAIL_DOMAIN}..."
+        
+        # Generate key pair in persistent storage
+        opendkim-genkey -t -s default -d "${MAIL_DOMAIN}" -D "${DKIM_DIR}/"
+        
+        # Set proper ownership
+        chown -R opendkim:certgroup "${DKIM_DIR}"
+        chmod 400 "${DKIM_DIR}/default.private"
+        chmod 444 "${DKIM_DIR}/default.txt"
+        
+        echo "[$(date -Iseconds)] [INFO] [MAIL] [DKIM]: DKIM keys generated successfully in persistent storage"
+        echo "[$(date -Iseconds)] [INFO] [MAIL] [DKIM]: Public key record:"
+        echo "[$(date -Iseconds)] [INFO] [MAIL] [DKIM]: ====================="
+        cat "${DKIM_DIR}/default.txt"
+        echo "[$(date -Iseconds)] [INFO] [MAIL] [DKIM]: ====================="
+        echo "[$(date -Iseconds)] [INFO] [MAIL] [DKIM]: Add this TXT record to your DNS:"
+        echo "[$(date -Iseconds)] [INFO] [MAIL] [DKIM]: Name: default._domainkey.${MAIL_DOMAIN}"
+        echo "[$(date -Iseconds)] [INFO] [MAIL] [DKIM]: Keys stored in: ${DKIM_DIR}"
+    else
+        echo "[$(date -Iseconds)] [INFO] [MAIL] [DKIM]: DKIM keys already exist in persistent storage, skipping generation"
+        # Ensure proper ownership of existing keys
+        chown -R opendkim:certgroup "${DKIM_DIR}"
+        chmod 400 "${DKIM_DIR}/default.private"
+        chmod 444 "${DKIM_DIR}/default.txt"
+    fi
+    
+    # Ensure OpenDKIM directories and permissions
+    mkdir -p /var/run/opendkim
+    chown opendkim:opendkim /var/run/opendkim
+    
+    # Create log file for OpenDKIM  
+    touch /data/logs/mail/opendkim.log
+    chown opendkim:loggroup /data/logs/mail/opendkim.log
+    chmod 644 /data/logs/mail/opendkim.log
+    
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [DKIM]: DKIM setup complete"
+}
+
+# Call DKIM setup
+setup_dkim
 
 # Process Postfix configuration template
 envsubst '${MAIL_SERVER_NAME} ${MAIL_DOMAIN} ${SSL_CERT_FILE} ${SSL_KEY_FILE} ${SSL_CHAIN_FILE}' \

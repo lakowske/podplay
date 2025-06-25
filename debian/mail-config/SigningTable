@@ -1,0 +1,4 @@
+# OpenDKIM Signing Table
+# PATTERN DOMAIN:SELECTOR
+
+*@mail.sethlakowske.com default._domainkey.mail.sethlakowske.com

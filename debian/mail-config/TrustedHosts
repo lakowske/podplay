@@ -1,0 +1,6 @@
+# Trusted hosts for OpenDKIM
+127.0.0.1
+localhost
+192.168.0.1/24
+*.mail.sethlakowske.com
+mail.sethlakowske.com

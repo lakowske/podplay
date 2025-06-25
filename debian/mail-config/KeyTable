@@ -1,0 +1,4 @@
+# OpenDKIM Key Table
+# SELECTOR._domainkey.DOMAIN DOMAIN:SELECTOR:/path/to/key
+
+default._domainkey.mail.sethlakowske.com mail.sethlakowske.com:default:/data/user-data/dkim/mail.sethlakowske.com/default.private
