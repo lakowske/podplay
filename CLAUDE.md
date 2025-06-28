@@ -11,6 +11,9 @@
 - **Container Host Bindings**: 
   - Web services: Use `-p 8080:80 -p 8443:443` for Apache/HTTP services
   - Certificate services: Use `-p 8080:80` for Let's Encrypt validation (certbot container)
+- **Network Mode**: Uses `pod` networking with port mappings
+  - Required for home networks where containers can't bind to privileged ports
+  - External IPs will appear as pod gateway IP (10.89.0.x) in logs
 - This allows Let's Encrypt validation to work through the router while keeping services on non-privileged ports locally
 - **Important**: For Let's Encrypt certificate generation, run the certbot container with `--user root` and `-p 8080:80` to allow proper port binding and validation
 
@@ -19,6 +22,9 @@
 - **Container Host Bindings**:
   - Web services: Use `-p 80:80 -p 443:443` for Apache/HTTP services
   - Certificate services: Use `-p 80:80` for Let's Encrypt validation (certbot container)
+- **Network Mode**: Uses `host` networking to expose real client IP addresses
+  - This enables fail2ban and rate limiting to work effectively
+  - DNS queries will show actual source IPs instead of pod gateway IPs
 - **Note**: Non-privileged users are allowed to bind to these host ports on this VPS
 - No port forwarding is needed as the VPS has a direct public IP
 

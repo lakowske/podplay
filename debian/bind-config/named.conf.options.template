@@ -27,6 +27,19 @@ options {
     
     // Log queries for debugging
     querylog yes;
+    
+    // Rate limiting to prevent DNS abuse
+    rate-limit {
+        responses-per-second 5;     // Max 5 responses per second per client
+        errors-per-second 2;        // Max 2 NXDOMAIN/errors per second
+        nxdomains-per-second 2;     // Max 2 NXDOMAIN responses per second
+        all-per-second 10;          // Overall limit per client
+        window 10;                  // Track over 10 second windows
+        slip 2;                     // Drop every other response when over limit
+        qps-scale 250;              // Scale limits when server is busy
+        exempt-clients { 127.0.0.1; ::1; };  // Don't rate limit localhost
+        log-only no;                // Actually enforce limits (not just log)
+    };
 };
 
 // Dual logging configuration (stdout + persistent files)

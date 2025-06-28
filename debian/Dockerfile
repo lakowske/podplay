@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     curl \
     ca-certificates \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # Create certificate group and user for shared certificate access
@@ -29,12 +30,15 @@ COPY requirements.txt* /tmp/
 RUN if [ -f /tmp/requirements.txt ]; then pip install -r /tmp/requirements.txt; fi && \
     rm -f /tmp/requirements.txt
 
+# Install watchdog for file monitoring (used by multiple services)
+RUN pip install watchdog
+
 # Create log directory structure
 RUN mkdir -p /data/logs/apache /data/logs/bind /data/logs/mail /data/logs/certbot && \
     chown -R loguser:loggroup /data/logs && \
     chmod 755 /data/logs /data/logs/*
 
-# Make cert_manager.py executable
-RUN chmod +x /data/src/cert_manager.py
+# Make Python scripts executable
+RUN chmod +x /data/src/cert_manager.py /data/src/dkim_manager.py
 
 CMD ["/bin/bash"]

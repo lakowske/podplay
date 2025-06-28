@@ -17,11 +17,28 @@ set +a
 # Generate pod YAML files
 echo "Generating pod YAML files for domain: $PODPLAY_DOMAIN"
 
+# Check network mode
+NETWORK_MODE="${PODPLAY_NETWORK_MODE:-pod}"
+echo "  Network mode: $NETWORK_MODE"
+
 for template in pod-yaml/*.yaml.template; do
     if [ -f "$template" ]; then
         output="${template%.template}"
         echo "  - Generating $(basename $output)"
-        envsubst < "$template" > "$output"
+        
+        # Generate the base YAML from template
+        envsubst < "$template" > "$output.tmp"
+        
+        # For podplay-pod.yaml, add hostNetwork if in host mode
+        if [[ "$(basename $output)" == "podplay-pod.yaml" ]] && [[ "$NETWORK_MODE" == "host" ]]; then
+            # Add hostNetwork: true after hostname line
+            sed -i '/^  hostname: podplay$/a\  hostNetwork: true' "$output.tmp"
+            
+            # Remove hostPort lines when using host networking
+            sed -i '/hostPort:/d' "$output.tmp"
+        fi
+        
+        mv "$output.tmp" "$output"
     fi
 done
 
@@ -29,6 +46,7 @@ echo "Configuration files generated successfully!"
 echo ""
 echo "Current configuration:"
 echo "  Domain: $PODPLAY_DOMAIN"
+echo "  Network Mode: $NETWORK_MODE"
 echo "  HTTP Port: $PODPLAY_HOST_HTTP_PORT"
 echo "  HTTPS Port: $PODPLAY_HOST_HTTPS_PORT"
 echo "  SMTP Port: $PODPLAY_HOST_SMTP_PORT"

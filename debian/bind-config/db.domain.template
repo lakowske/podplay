@@ -36,9 +36,8 @@ smtp    IN      CNAME   mail.${DOMAIN_NAME}.
 ; DMARC - Domain-based Message Authentication, Reporting & Conformance
 _dmarc  IN      TXT     "v=DMARC1; p=quarantine; rua=mailto:admin@${DOMAIN_NAME}; ruf=mailto:admin@${DOMAIN_NAME}; pct=100; sp=quarantine"
 
-; DKIM placeholder - Domain Keys Identified Mail (requires mail server configuration)
-; default._domainkey IN TXT "v=DKIM1; k=rsa; p=YOUR_PUBLIC_KEY_HERE"
-; Note: DKIM requires generating keys in the mail server and adding the public key here
+; DKIM - Domain Keys Identified Mail (will be auto-populated when available)
+; default._domainkey IN TXT "..." (DKIM key will be added automatically by DKIM manager)
 
 ; Additional mail-related records
 ; Autodiscover for mail clients

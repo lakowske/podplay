@@ -94,6 +94,6 @@ echo "  - Listening on: port 53 (UDP/TCP)"
 echo "  - Zone file: /etc/bind/zones/db.${DOMAIN_NAME}"
 echo ""
 
-# Start BIND in foreground
-echo "Starting BIND DNS server..."
-exec /usr/sbin/named -g -u bind
+# Start BIND and DKIM monitor via supervisord
+echo "Starting BIND DNS server with DKIM monitoring..."
+exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
