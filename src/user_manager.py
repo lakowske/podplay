@@ -133,17 +133,42 @@ class UserReloadStrategy:
             self.log_error(f"User config validation error: {e}")
             return False
     
+    def validate_password_strength(self, password):
+        """Validate password meets security requirements."""
+        if len(password) < 12:
+            raise ValueError("Password must be at least 12 characters long")
+        
+        has_upper = any(c.isupper() for c in password)
+        has_lower = any(c.islower() for c in password)
+        has_digit = any(c.isdigit() for c in password)
+        has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password)
+        
+        if not (has_upper and has_lower and has_digit and has_special):
+            raise ValueError("Password must contain at least one uppercase letter, lowercase letter, digit, and special character")
+        
+        # Check for common weak patterns
+        weak_patterns = ['password', '123456', 'admin', 'test', 'mail']
+        password_lower = password.lower()
+        for pattern in weak_patterns:
+            if pattern in password_lower:
+                raise ValueError(f"Password cannot contain common weak pattern: {pattern}")
+        
+        return True
+
     def generate_password_hash(self, password, scheme='SHA512-CRYPT'):
-        """Generate password hash for Dovecot."""
+        """Generate password hash for Dovecot with strength validation."""
         try:
+            # Validate password strength first
+            self.validate_password_strength(password)
+            
             if scheme == 'SHA512-CRYPT':
                 return crypt.crypt(password, crypt.mksalt(crypt.METHOD_SHA512))
             else:
                 # Fallback to plain for testing (not recommended for production)
                 return password
         except Exception as e:
-            self.log_error(f"Password hashing error: {e}")
-            return password
+            self.log_error(f"Password validation/hashing error: {e}")
+            raise e
 
 class MailUserReloadStrategy(UserReloadStrategy):
     """Mail service user configuration reload implementation."""

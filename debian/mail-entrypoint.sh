@@ -216,10 +216,67 @@ EOF
 # Call user management setup
 setup_user_management
 
+# Generate dovecot passwd file from user-data
+generate_dovecot_passwd() {
+    echo "[$(date -Iseconds)] [INFO] [MAIL] [AUTH]: Generating Dovecot passwd file..."
+    
+    # Create dovecot passwd file
+    PASSWD_FILE="/etc/dovecot/passwd"
+    > "${PASSWD_FILE}"
+    
+    # Read users.yaml and generate entries for confirmed users only
+    python3 << 'EOF'
+import yaml
+import sys
+import pwd
+import os
+
+try:
+    with open('/data/user-data/config/users.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+        
+    users = config.get('users', {})
+    vmail_uid = pwd.getpwnam('vmail').pw_uid
+    vmail_gid = pwd.getpwnam('vmail').pw_gid
+    
+    security_policy = config.get('security_policy', {})
+    require_confirmation = security_policy.get('require_email_confirmation', True)
+    
+    with open('/etc/dovecot/passwd', 'w') as f:
+        for username, userdata in users.items():
+            if userdata.get('status') == 'active':
+                # Check email confirmation requirement
+                email_confirmed = userdata.get('email_confirmed', False)
+                if require_confirmation and not email_confirmed:
+                    print(f"Skipping unconfirmed user: {username}")
+                    continue
+                    
+                password_hash = userdata.get('password_hash', '')
+                # Create dovecot passwd entry
+                f.write(f"{username}:{password_hash}:{vmail_uid}:{vmail_gid}::/data/user-data/users/{username}/mail:::\n")
+        
+    active_users = [u for u in users.values() if u.get('status') == 'active']
+    confirmed_users = [u for u in active_users if not require_confirmation or u.get('email_confirmed', False)]
+    print(f"Generated Dovecot passwd file with {len(confirmed_users)} confirmed users out of {len(active_users)} active users")
+    
+except Exception as e:
+    print(f"Error generating Dovecot passwd: {e}")
+    sys.exit(1)
+EOF
+
+    # Set proper permissions
+    chown root:dovecot "${PASSWD_FILE}"
+    chmod 640 "${PASSWD_FILE}"
+}
+
 # Generate initial service configuration files
 echo "[$(date -Iseconds)] [INFO] [MAIL] [USER-MANAGER]: Generating initial service configuration files..."
 /data/.venv/bin/python /data/src/user_manager.py --generate-initial --service-type mail
 echo "[$(date -Iseconds)] [INFO] [MAIL] [USER-MANAGER]: Initial configuration files generated"
+
+# Generate authentication database with email confirmation enforcement
+echo "[$(date -Iseconds)] [INFO] [MAIL] [AUTH]: Generating authentication database with security policies..."
+generate_dovecot_passwd
 
 echo ""
 echo "Mail server configuration complete!"
